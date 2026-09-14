@@ -1,6 +1,12 @@
+
 package main
 import "core:fmt"
-
+_ :: fmt
 main :: proc() {
-	fmt.print("hello world\n")
+	setup_runtime()
+	gen_map_debug()
+	defer teardown_runtime()
+	for (!rl.WindowShouldClose()) {
+		runtime_step()
+	}
 }
