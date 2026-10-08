@@ -13,6 +13,7 @@ uniform float render_height;
 uniform vec3 input_light_direction;
 uniform vec4 input_light_color;
 uniform int display_raw;
+uniform int display_normals;
 
 struct PixelData {
     float height;
@@ -129,53 +130,6 @@ ObjectData get_object_data_at(int x, int y) {
     return outp;
 }
 
-float point_obscurance(int x1, int y1, int x2, int y2) {
-    if (x1 == x2 && y1 == y2) {
-        return 1.;
-    }
-    PixelData d0 = get_pixel_data_at(x1, y1);
-    PixelData d1 = get_pixel_data_at(x2, y2);
-    float obsc_px = 0.;
-    float obsc_py = 0.;
-    float obsc_mx = 0.;
-    float obsc_my = 0.;
-    vec2 delta = vec2(x2 - x1, y2 - y1);
-    vec2 dv = normalize(delta);
-    int lx = int(length(delta));
-    int total = 0;
-    // float expected_dh = (d1.height - d0.height) / lx;
-    for (int d = 0; d <= lx; d++) {
-        int x = int(d * dv.x + x1);
-        int y = int(d * dv.y + y1);
-        float h = d0.height;
-        for (int dy = -1; dy < 2; dy++) {
-            for (int dx = -1; dx < 2; dx++) {
-                if (dx == 0 && dy == 0) {
-                    continue;
-                }
-                PixelData p = get_pixel_data_at(x + dx, y + dy);
-                if (p.height < h && p.height < d1.height) {
-                    continue;
-                }
-                float delta = sqrt(abs(p.height - h));
-                if (delta > 0.5) {
-                    total += 1;
-                    if (total >= 8) {
-                        break;
-                    }
-                }
-            }
-            if (total >= 8) {
-                break;
-            }
-        }
-        if (total >= 8) {
-            break;
-        }
-    }
-    return 1. - (float(total) / 9);
-}
-
 vec4 calculate_lighting(int pos_x, int pos_y, int inner_radius,
                         int outer_radius) {
     ObjectData obj = get_object_data_at(pos_x, pos_y);
@@ -287,7 +241,7 @@ vec4 calculate_lighting(int pos_x, int pos_y, int inner_radius,
 }
 
 void main() {
-    bool normals = false;
+    bool normals = display_normals != 0;
     vec2 coord = fragTexCoord;
     int pos_x = int(coord.x * render_width);
     int pos_y = int(coord.y * render_height);

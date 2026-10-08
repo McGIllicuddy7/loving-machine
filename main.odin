@@ -34,8 +34,17 @@ main :: proc() {
 		xcx.process_object(obj)
 		raylib.BeginDrawing()
 		raylib.ClearBackground(raylib.BLACK)
+		if raylib.IsKeyPressed(.S) {
+			obj.dbg = true
+			obj.dbg_normals = false
+		}
 		if raylib.IsKeyPressed(.H) {
-			obj.dbg = !obj.dbg
+			obj.dbg = false
+			obj.dbg_normals = false
+		}
+		if raylib.IsKeyPressed(.N) {
+			obj.dbg = false
+			obj.dbg_normals = true
 		}
 		if raylib.IsKeyPressed(.R) {
 			regenerate_obj(obj)

@@ -11,6 +11,7 @@ Object :: struct {
 	light_direction: raylib.Vector3,
 	light_color:     raylib.Color,
 	dbg:             bool,
+	dbg_normals:     bool,
 }
 
 process_object :: proc(this: ^Object) {
@@ -20,14 +21,23 @@ process_object :: proc(this: ^Object) {
 		raylib.SetShaderValue(this.shader, dir_loc, &this.light_direction, .VEC3)
 		col := (cast([4]f32)this.light_color) / (255.)
 		raylib.SetShaderValue(this.shader, col_loc, &col, .VEC4)
-	}; {
+	}
+	{
 		dbg_lock := raylib.GetShaderLocation(this.shader, "display_raw")
 		v: i32 = 0
 		if this.dbg {
 			v = 1
 		}
 		raylib.SetShaderValue(this.shader, dbg_lock, &v, .INT)
+		dbg_norm_lock := raylib.GetShaderLocation(this.shader, "display_normals")
+		v = 0
+		if this.dbg_normals {
+			v = 1
+		}
+		raylib.SetShaderValue(this.shader, dbg_norm_lock, &v, .INT)
+
 	}
+
 	width_loc := raylib.GetShaderLocation(this.shader, "render_width")
 	height_loc := raylib.GetShaderLocation(this.shader, "render_height")
 	width: f32 = cast(f32)this.target.texture.width
