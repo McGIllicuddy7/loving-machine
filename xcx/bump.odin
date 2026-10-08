@@ -1,24 +1,57 @@
 package xcx
 FRAG_SHADER_SOURCE :: #load("../xcx_frag.glsl", cstring)
 import "core:math"
+import "core:strings"
 import "vendor:raylib"
 
-
 Object :: struct {
-	input:           raylib.RenderTexture2D,
-	target:          raylib.RenderTexture2D,
-	shader:          raylib.Shader,
-	light_direction: raylib.Vector3,
-	light_color:     raylib.Color,
-	dbg:             bool,
-	dbg_normals:     bool,
+	input:       raylib.RenderTexture2D,
+	target:      raylib.RenderTexture2D,
+	shader:      raylib.Shader,
+	light_pos:   raylib.Vector3,
+	light_color: raylib.Color,
+	dbg:         bool,
+	dbg_normals: bool,
+}
+
+Color :: enum {
+	BLACK, //0
+	RED, //1
+	GREEN, //2
+	YELLOW, //3
+	BLUE, //4
+	MAGENTA, //5
+	CYAN, //6
+	WHITE, //7
+	BRIGHT_BLACK, //8
+	BRIGHT_RED, //9
+	BRIGHT_GREEN, //10
+	BRIGHT_YELLOW, //11
+	BRIGHT_BLUE, //12
+	BRIGHT_MAGENTA, //13
+	BRIGHT_CYAN, //14
+	BRIGHT_WHITE, //15
+	EMMISIVE_BLACK, //16
+	EMMISIVE_RED, //17
+	EMMISIVE_GREEN, //18
+	EMMISIVE_YELLOW, //19
+	EMMISIVE_BLUE, //20
+	EMMISIVE_MAGENTA, //21
+	EMMISIVE_CYAN, //22
+	EMMISIVE_WHITE, //23
+}
+
+PixelData :: struct {
+	height:       f32,
+	glass_height: f32,
+	color:        Color,
 }
 
 process_object :: proc(this: ^Object) {
 	{
-		dir_loc := raylib.GetShaderLocation(this.shader, "input_light_direction")
+		dir_loc := raylib.GetShaderLocation(this.shader, "input_light_pos")
 		col_loc := raylib.GetShaderLocation(this.shader, "input_light_color")
-		raylib.SetShaderValue(this.shader, dir_loc, &this.light_direction, .VEC3)
+		raylib.SetShaderValue(this.shader, dir_loc, &this.light_pos, .VEC3)
 		col := (cast([4]f32)this.light_color) / (255.)
 		raylib.SetShaderValue(this.shader, col_loc, &col, .VEC4)
 	}
@@ -67,7 +100,7 @@ create_object :: proc(width: i32, height: i32) -> ^Object {
 	out.shader = raylib.LoadShaderFromMemory(nil, FRAG_SHADER_SOURCE)
 	out.input = raylib.LoadRenderTexture(width, height)
 	out.target = raylib.LoadRenderTexture(width, height)
-	out.light_direction = {0, 0, -1}
+	out.light_pos = raylib.Vector3{cast(f32)width / 2, cast(f32)height, 200}
 	out.light_color = raylib.WHITE
 	return out
 }
@@ -111,42 +144,10 @@ render_object :: proc(this: ^Object, x: i32, y: i32, width: i32, height: i32) {
 	}
 }
 
-Color :: enum {
-	BLACK, //0
-	RED, //1
-	GREEN, //2
-	YELLOW, //3
-	BLUE, //4
-	MAGENTA, //5
-	CYAN, //6
-	WHITE, //7
-	BRIGHT_BLACK, //8
-	BRIGHT_RED, //9
-	BRIGHT_GREEN, //10
-	BRIGHT_YELLOW, //11
-	BRIGHT_BLUE, //12
-	BRIGHT_MAGENTA, //13
-	BRIGHT_CYAN, //14
-	BRIGHT_WHITE, //15
-	EMMISIVE_BLACK, //16
-	EMMISIVE_RED, //17
-	EMMISIVE_GREEN, //18
-	EMMISIVE_YELLOW, //19
-	EMMISIVE_BLUE, //20
-	EMMISIVE_MAGENTA, //21
-	EMMISIVE_CYAN, //22
-	EMMISIVE_WHITE, //23
-}
-
-PixelData :: struct {
-	height:       f32,
-	reflectivity: f32,
-	color:        Color,
-}
 
 pixel_data_to_color :: proc(data: PixelData) -> raylib.Color {
 	r := cast(u8)math.floor(data.height * 255. / 10. + 5.)
-	g := cast(u8)math.floor(data.reflectivity * 255.)
+	g := cast(u8)math.floor(data.glass_height * 255.)
 	b := cast(u8)data.color
 	return {r, g, b, 255}
 }
@@ -171,11 +172,11 @@ end_editing :: proc(object: ^Object) {
 	raylib.EndTextureMode()
 }
 
-clear_background :: proc(color: Color, bmp_height: f32, reflectivity: f32 = 0.) {
+clear_background :: proc(color: Color, bmp_height: f32, glass_height: f32 = 0.) {
 	data: PixelData
 	data.color = color
 	data.height = bmp_height
-	data.reflectivity = reflectivity
+	data.glass_height = glass_height
 	col := pixel_data_to_color(data)
 	raylib.ClearBackground(col)
 }
@@ -184,12 +185,12 @@ draw_rectangle :: proc(
 	x, y, width, height: i32,
 	color: Color,
 	bmp_height: f32,
-	reflectivity: f32 = 0.,
+	glass_height: f32 = 0.,
 ) {
 	data: PixelData
 	data.color = color
 	data.height = bmp_height
-	data.reflectivity = reflectivity
+	data.glass_height = glass_height
 	col := pixel_data_to_color(data)
 	raylib.DrawRectangle(x, y, width, height, col)
 }
@@ -199,12 +200,12 @@ draw_circle :: proc(
 	radius: f32,
 	color: Color,
 	bmp_height: f32,
-	reflectivity: f32 = 0.,
+	glass_height: f32 = 0.,
 ) {
 	data: PixelData
 	data.color = color
 	data.height = bmp_height
-	data.reflectivity = reflectivity
+	data.glass_height = glass_height
 	col := pixel_data_to_color(data)
 	raylib.DrawCircle(x, y, radius, col)
 }
@@ -216,7 +217,7 @@ draw_circle_raised :: proc(
 	bmp_height: f32,
 	outer_bmp_height: f32,
 	ring_size: i32,
-	reflectivity: f32 = 0.,
+	glass_height: f32 = 0.,
 ) {
 	for i in 0 ..< ring_size {
 		l := cast(f32)i / cast(f32)ring_size
@@ -224,14 +225,14 @@ draw_circle_raised :: proc(
 		data: PixelData
 		data.color = color
 		data.height = h
-		data.reflectivity = reflectivity
+		data.glass_height = glass_height
 		col := pixel_data_to_color(data)
 		raylib.DrawCircle(x, y, radius - cast(f32)i, col)
 	}
 	data: PixelData
 	data.color = color
 	data.height = bmp_height
-	data.reflectivity = reflectivity
+	data.glass_height = glass_height
 	col := pixel_data_to_color(data)
 	raylib.DrawCircle(x, y, radius - cast(f32)ring_size, col)
 }
@@ -242,7 +243,7 @@ draw_rectangle_raised :: proc(
 	bmp_height: f32,
 	outer_bmp_height: f32,
 	ring_size: i32,
-	reflectivity: f32 = 0.,
+	glass_height: f32 = 0.,
 ) {
 	for i in 0 ..< ring_size {
 		l := cast(f32)i / cast(f32)ring_size
@@ -250,14 +251,14 @@ draw_rectangle_raised :: proc(
 		data: PixelData
 		data.color = color
 		data.height = h
-		data.reflectivity = reflectivity
+		data.glass_height = glass_height
 		col := pixel_data_to_color(data)
 		raylib.DrawRectangle(x + i, y + i, width - 2 * i, height - 2 * i, col)
 	}
 	data: PixelData
 	data.color = color
 	data.height = bmp_height
-	data.reflectivity = reflectivity
+	data.glass_height = glass_height
 	col := pixel_data_to_color(data)
 	raylib.DrawRectangle(
 		x + ring_size,
@@ -266,4 +267,21 @@ draw_rectangle_raised :: proc(
 		height - ring_size * 2,
 		col,
 	)
+}
+
+draw_text :: proc(
+	text: string,
+	x, y: i32,
+	text_height: i32,
+	color: Color,
+	bmp_height: f32,
+	glass_height: f32 = 0.,
+) {
+	data: PixelData
+	data.color = color
+	data.height = bmp_height
+	data.glass_height = glass_height
+	col := pixel_data_to_color(data)
+	s := strings.clone_to_cstring(text, context.temp_allocator)
+	raylib.DrawText(s, x, y, text_height, col)
 }
