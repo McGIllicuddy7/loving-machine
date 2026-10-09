@@ -14,46 +14,50 @@ Object :: struct {
 	dbg_normals: bool,
 }
 
-Color :: enum {
-	BLACK, //0
-	RED, //1
-	GREEN, //2
-	YELLOW, //3
-	BLUE, //4
-	MAGENTA, //5
-	CYAN, //6
-	WHITE, //7
-	BRIGHT_BLACK, //8
-	BRIGHT_RED, //9
-	BRIGHT_GREEN, //10
-	BRIGHT_YELLOW, //11
-	BRIGHT_BLUE, //12
-	BRIGHT_MAGENTA, //13
-	BRIGHT_CYAN, //14
-	BRIGHT_WHITE, //15
-	EMMISIVE_BLACK, //16
-	EMMISIVE_RED, //17
-	EMMISIVE_GREEN, //18
-	EMMISIVE_YELLOW, //19
-	EMMISIVE_BLUE, //20
-	EMMISIVE_MAGENTA, //21
-	EMMISIVE_CYAN, //22
-	EMMISIVE_WHITE, //23
+Material :: enum {
+	BLACK_PLASTIC, //0
+	WHITE_PLASTIC, //1
+	GRAY_PLASTIC, //2
+	RED_PLASTIC, //3
+	GREEN_PLASTIC, //4
+	BLUE_PLASTIC, //5
+	BROWN_PLASTIC, //6
+	BEIGE_PLASTIC, //7
+	LIGHT_WOOD, //8
+	DARK_WOOD, //9
+	LIGHT_METAL, //10
+	DARK_METAL, //11
+	BLACK_PAINT, //12
+	WHITE_PAINT, //13
+	GRAY_PAINT, //14
+	RED_PAINT, //15
+	GREEN_PAINT, //16
+	BLUE_PAINT, //17
+	BROWN_PAINT, //18
+	BEIGE_PAINT, //19
+	WHITE_LIGHT, //20
+	RED_LIGHT, //21
+	GREEN_LIGHT, //22
+	BLUE_LIGHT, //23
+	PINK_LIGHT, //24
+	ORANGE_LIGHT, //25
+	VOID,
+	VOID_LIGHT,
 }
 
 PixelData :: struct {
 	height:       f32,
 	glass_height: f32,
-	color:        Color,
+	material:     Material,
 }
 
 process_object :: proc(this: ^Object) {
 	{
 		dir_loc := raylib.GetShaderLocation(this.shader, "input_light_pos")
-		col_loc := raylib.GetShaderLocation(this.shader, "input_light_color")
+		mat_loc := raylib.GetShaderLocation(this.shader, "input_light_color")
 		raylib.SetShaderValue(this.shader, dir_loc, &this.light_pos, .VEC3)
-		col := (cast([4]f32)this.light_color) / (255.)
-		raylib.SetShaderValue(this.shader, col_loc, &col, .VEC4)
+		mat := (cast([4]f32)this.light_color) / (255.)
+		raylib.SetShaderValue(this.shader, mat_loc, &mat, .VEC4)
 	}
 	{
 		dbg_lock := raylib.GetShaderLocation(this.shader, "display_raw")
@@ -100,7 +104,7 @@ create_object :: proc(width: i32, height: i32) -> ^Object {
 	out.shader = raylib.LoadShaderFromMemory(nil, FRAG_SHADER_SOURCE)
 	out.input = raylib.LoadRenderTexture(width, height)
 	out.target = raylib.LoadRenderTexture(width, height)
-	out.light_pos = raylib.Vector3{cast(f32)width / 2, cast(f32)height, 200}
+	out.light_pos = raylib.Vector3{cast(f32)width / 2, cast(f32)height, 400}
 	out.light_color = raylib.WHITE
 	return out
 }
@@ -148,7 +152,7 @@ render_object :: proc(this: ^Object, x: i32, y: i32, width: i32, height: i32) {
 pixel_data_to_color :: proc(data: PixelData) -> raylib.Color {
 	r := cast(u8)math.floor(data.height * 255. / 10. + 5.)
 	g := cast(u8)math.floor(data.glass_height * 255.)
-	b := cast(u8)data.color
+	b := cast(u8)data.material
 	return {r, g, b, 255}
 }
 
@@ -172,48 +176,48 @@ end_editing :: proc(object: ^Object) {
 	raylib.EndTextureMode()
 }
 
-clear_background :: proc(color: Color, bmp_height: f32, glass_height: f32 = 0.) {
+clear_background :: proc(material: Material, bmp_height: f32, glass_height: f32 = 0.) {
 	data: PixelData
-	data.color = color
+	data.material = material
 	data.height = bmp_height
 	data.glass_height = glass_height
-	col := pixel_data_to_color(data)
-	raylib.ClearBackground(col)
+	mat := pixel_data_to_color(data)
+	raylib.ClearBackground(mat)
 }
 
 draw_rectangle :: proc(
 	x, y, width, height: i32,
-	color: Color,
+	material: Material,
 	bmp_height: f32,
 	glass_height: f32 = 0.,
 ) {
 	data: PixelData
-	data.color = color
+	data.material = material
 	data.height = bmp_height
 	data.glass_height = glass_height
-	col := pixel_data_to_color(data)
-	raylib.DrawRectangle(x, y, width, height, col)
+	mat := pixel_data_to_color(data)
+	raylib.DrawRectangle(x, y, width, height, mat)
 }
 
 draw_circle :: proc(
 	x, y: i32,
 	radius: f32,
-	color: Color,
+	material: Material,
 	bmp_height: f32,
 	glass_height: f32 = 0.,
 ) {
 	data: PixelData
-	data.color = color
+	data.material = material
 	data.height = bmp_height
 	data.glass_height = glass_height
-	col := pixel_data_to_color(data)
-	raylib.DrawCircle(x, y, radius, col)
+	mat := pixel_data_to_color(data)
+	raylib.DrawCircle(x, y, radius, mat)
 }
 
 draw_circle_raised :: proc(
 	x, y: i32,
 	radius: f32,
-	color: Color,
+	material: Material,
 	bmp_height: f32,
 	outer_bmp_height: f32,
 	ring_size: i32,
@@ -223,23 +227,23 @@ draw_circle_raised :: proc(
 		l := cast(f32)i / cast(f32)ring_size
 		h := outer_bmp_height * (1 - l) + bmp_height * l
 		data: PixelData
-		data.color = color
+		data.material = material
 		data.height = h
 		data.glass_height = glass_height
-		col := pixel_data_to_color(data)
-		raylib.DrawCircle(x, y, radius - cast(f32)i, col)
+		mat := pixel_data_to_color(data)
+		raylib.DrawCircle(x, y, radius - cast(f32)i, mat)
 	}
 	data: PixelData
-	data.color = color
+	data.material = material
 	data.height = bmp_height
 	data.glass_height = glass_height
-	col := pixel_data_to_color(data)
-	raylib.DrawCircle(x, y, radius - cast(f32)ring_size, col)
+	mat := pixel_data_to_color(data)
+	raylib.DrawCircle(x, y, radius - cast(f32)ring_size, mat)
 }
 
 draw_rectangle_raised :: proc(
 	x, y, width, height: i32,
-	color: Color,
+	material: Material,
 	bmp_height: f32,
 	outer_bmp_height: f32,
 	ring_size: i32,
@@ -249,23 +253,23 @@ draw_rectangle_raised :: proc(
 		l := cast(f32)i / cast(f32)ring_size
 		h := outer_bmp_height * (1 - l) + bmp_height * l
 		data: PixelData
-		data.color = color
+		data.material = material
 		data.height = h
 		data.glass_height = glass_height
-		col := pixel_data_to_color(data)
-		raylib.DrawRectangle(x + i, y + i, width - 2 * i, height - 2 * i, col)
+		mat := pixel_data_to_color(data)
+		raylib.DrawRectangle(x + i, y + i, width - 2 * i, height - 2 * i, mat)
 	}
 	data: PixelData
-	data.color = color
+	data.material = material
 	data.height = bmp_height
 	data.glass_height = glass_height
-	col := pixel_data_to_color(data)
+	mat := pixel_data_to_color(data)
 	raylib.DrawRectangle(
 		x + ring_size,
 		y + ring_size,
 		width - ring_size * 2,
 		height - ring_size * 2,
-		col,
+		mat,
 	)
 }
 
@@ -273,15 +277,15 @@ draw_text :: proc(
 	text: string,
 	x, y: i32,
 	text_height: i32,
-	color: Color,
+	material: Material,
 	bmp_height: f32,
 	glass_height: f32 = 0.,
 ) {
 	data: PixelData
-	data.color = color
+	data.material = material
 	data.height = bmp_height
 	data.glass_height = glass_height
-	col := pixel_data_to_color(data)
+	mat := pixel_data_to_color(data)
 	s := strings.clone_to_cstring(text, context.temp_allocator)
-	raylib.DrawText(s, x, y, text_height, col)
+	raylib.DrawText(s, x, y, text_height, mat)
 }

@@ -14,11 +14,18 @@ uniform vec3 input_light_pos;
 uniform vec4 input_light_color;
 uniform int display_raw;
 uniform int display_normals;
-
+const int MATERIAL_KIND_PLASTIC = 1;
+const int MATERIAL_KIND_WOOD = 2;
+const int MATERIAL_KIND_METAL= 3;
+const int MATERIAL_KIND_PAINT= 4;
+const int MATERIAL_KIND_LIGHT= 5;
+const int MATERIAL_KIND_VOID = 6;
 struct PixelData {
     float height;
-    vec4 color;
     float glass_height;
+    vec4 color;
+    float specular;
+    int kind;
 };
 
 struct ObjectData {
@@ -26,40 +33,85 @@ struct ObjectData {
     float glass_height;
     vec3 normal;
     vec4 color;
+    float specular;
+    int kind;
 };
 
-vec4 COLORS[] = vec4[](vec4(0, 0, 0, 1),       // BLACK, //0
-                       vec4(0.8, 0, 0, 1),     // RED, //1
-                       vec4(0., 0.8, 0., 1),   // GREEN, //2
-                       vec4(0.8, 0.8, 0., 1),  // YELLOW, //3
-                       vec4(0, 0, 0.8, 1),     // BLUE, //4
-                       vec4(0.8, 0, 0.8, 1),   // MAGENTA, //5
-                       vec4(0, 0.8, 0.8, 1),   // CYAN, //6
-                       vec4(0.8, 0.8, 0.8, 1), // WHITE, //7
-                       vec4(0.2, 0.2, 0.2, 1), // BRIGHT_BLACK, //8
-                       vec4(1, 0, 0, 1),       // BRIGHT_RED, //9
-                       vec4(0, 1, 0, 1),       // BRIGHT_GREEN, //10
-                       vec4(1, 1, 0, 1),       // BRIGHT_YELLOW, //11
-                       vec4(0, 0, 1, 1),       // BRIGHT_BLUE, //12
-                       vec4(1, 0, 1, 1),       // BRIGHT_MAGENTA, //13
-                       vec4(0, 1, 1, 1),       // BRIGHT_CYAN, //14
-                       vec4(1, 1, 1, 1),       // BRIGHT_WHITE, //15
-                       vec4(1.2, 1.2, 1.2, 1), // EMMISIVE_BLACK, //16
-                       vec4(2, 0, 0, 1),       // EMMISIVE_RED, //17
-                       vec4(0, 2, 0, 1),       // EMMISIVE_GREEN, //18
-                       vec4(2, 2, 0, 1),       // EMMISIVE_YELLOW, //19
-                       vec4(0, 0, 2, 1),       // EMMISIVE_BLUE, //20
-                       vec4(2, 0, 2, 1),       // EMMISIVE_MAGENTA, //21
-                       vec4(0, 2, 2, 1),       // EMMISIVE_CYAN, //22
-                       vec4(2, 2, 2, 1)        // EMMISIVE_WHITE, //23
-);
+struct Material{
+    vec4 color;
+    float specular;
+    int kind;
+};
 
-const int COLORS_COUNT = COLORS.length();
-vec4 v_parse_color(int col) { return COLORS[(col % COLORS_COUNT)]; }
+const float LIGHT_MUL = 3.;
+Material BLACK_PLASTIC = Material(vec4(0.01, 0.01, 0.01, 1), 0.05,MATERIAL_KIND_PLASTIC);
+Material WHITE_PLASTIC= Material(vec4(0.8, 0.8, 0.8, 1), 0.025, MATERIAL_KIND_PLASTIC);
+Material GRAY_PLASTIC= Material(vec4(0.2, 0.2, 0.2, 1), 0.025, MATERIAL_KIND_PLASTIC);
+Material  RED_PLASTIC =Material(vec4(0.8, 0.0, 0.0, 1), 0.025, MATERIAL_KIND_PLASTIC);
+Material GREEN_PLASTIC=Material(vec4(0.0, 0.8, 0.0, 1), 0.025, MATERIAL_KIND_PLASTIC);
+Material BLUE_PLASTIC=Material(vec4(0.0, 0.0, 0.8, 1), 0.025, MATERIAL_KIND_PLASTIC);
+Material	BROWN_PLASTIC = Material(vec4(0.4, 0.4, 0.2, 1), 0.025,MATERIAL_KIND_PLASTIC);
+Material	BEIGE_PLASTIC = Material(vec4(0.85, 0.85, 0.7, 1), 0.025,MATERIAL_KIND_PLASTIC);
+Material	LIGHT_WOOD =  Material(vec4(0.773, 0.651, 0.337, 1.0), 0.05,MATERIAL_KIND_WOOD);
+Material	DARK_WOOD =  Material(vec4(0.773*0.6, 0.651*0.6, 0.337*0.6, 1.0), 0.05,MATERIAL_KIND_WOOD);
+
+Material	LIGHT_METAL =Material(vec4(0.6, 0.6, 0.601, 1.), 1.,MATERIAL_KIND_METAL);
+Material	DARK_METAL = Material(vec4(0.3, 0.3, 0.305, 1), 1.,MATERIAL_KIND_METAL);
+Material	BLACK_PAINT = Material(vec4(0.1, 0.1, 0.1, 1), 0, MATERIAL_KIND_PAINT);
+Material	WHITE_PAINT = Material(vec4(1, 1., 1., 1), 0, MATERIAL_KIND_PAINT);
+Material	GRAY_PAINT=Material(vec4(0.4, 0.4, 0.4, 1), 0, MATERIAL_KIND_PAINT);
+Material	RED_PAINT=Material(vec4(0.8, 0.0, 0.0, 1), 0, MATERIAL_KIND_PAINT);
+Material	GREEN_PAINT = Material(vec4(0.0, 0.8, 0.0, 1), 0, MATERIAL_KIND_PAINT);
+Material	BLUE_PAINT = Material(vec4(0.0, 0.0, 0.8, 1), 0, MATERIAL_KIND_PAINT);
+Material	BROWN_PAINT =  Material(vec4(0.4, 0.4, 0.2, 1), 0, MATERIAL_KIND_PAINT);
+Material	BEIGE_PAINT =  Material(vec4(0.9, 0.9, 0.8, 1.0), 0, MATERIAL_KIND_PAINT);
+Material	WHITE_LIGHT = Material(vec4(1.0, 1.0, 1.0, 1)*LIGHT_MUL, 0, MATERIAL_KIND_LIGHT);
+Material	RED_LIGHT=Material(vec4(1.0, 0.4, 0.4, 1)*LIGHT_MUL, 0, MATERIAL_KIND_LIGHT);
+Material	GREEN_LIGHT=Material(vec4(0.4, 1.0, 0.4, 1)*LIGHT_MUL, 0, MATERIAL_KIND_LIGHT);
+Material	BLUE_LIGHT=Material(vec4(0.4, 0.4, 1.0, 1)*LIGHT_MUL, 0, MATERIAL_KIND_LIGHT);
+Material	PINK_LIGHT=Material(vec4(1.0, 0.8, 0.8, 1)*LIGHT_MUL, 0, MATERIAL_KIND_LIGHT);
+Material	ORANGE_LIGHT=Material(vec4(1.0, 0.8, 0.4, 1)*LIGHT_MUL, 0, MATERIAL_KIND_LIGHT);
+Material	VOID=Material(vec4(0,0,0,1), 0, MATERIAL_KIND_LIGHT);
+Material	VOID_LIGHT=Material(vec4(0.8,0.8,0.8,1), 0, MATERIAL_KIND_VOID);
+
+Material MATERIALS[]  =Material[](
+	BLACK_PLASTIC, //0
+	WHITE_PLASTIC, //1
+	GRAY_PLASTIC, //2
+	RED_PLASTIC, //3
+	GREEN_PLASTIC, //4
+	BLUE_PLASTIC, //5
+	BROWN_PLASTIC, //6
+	BEIGE_PLASTIC, //7
+	LIGHT_WOOD, //8
+	DARK_WOOD, //9
+	LIGHT_METAL, //10
+	DARK_METAL, //11
+	BLACK_PAINT, //12
+	WHITE_PAINT, //13
+	GRAY_PAINT, //14
+	RED_PAINT, //15
+	GREEN_PAINT, //16
+	BLUE_PAINT, //17
+	BROWN_PAINT, //18
+	BEIGE_PAINT, //19
+	WHITE_LIGHT, //20
+	RED_LIGHT, //21
+	GREEN_LIGHT, //22
+	BLUE_LIGHT, //23
+	PINK_LIGHT, //24
+	ORANGE_LIGHT, //25
+	VOID,
+	VOID_LIGHT
+);
+Material v_parse_material(int idx){
+    return MATERIALS[idx%MATERIALS.length()];
+}
 
 vec3 get_camera_position(){
-    return vec3(float(render_width)/2, float(render_height)/2, 100);
+    return vec3(float(render_width)/2, float(render_height)/2, 50);
 }
+
 float hash(vec2 uv)
 {
     return fract(sin(7.289 * uv.x + 11.23 * uv.y) * 23758.5453);
@@ -68,14 +120,123 @@ float hash(vec2 uv)
 float hash_point(int x, int y){
     return hash(vec2(float(x), float(y)));
 }
+vec4 process_object_color_at(vec4 base_color, int kind, int pos_x, int pos_y){
+    vec4 cout=  base_color;
+    if(kind == MATERIAL_KIND_PLASTIC){
+        float scale = 1.;
+        float noise_v = 0.01;
+        float sign_v = 0.00;
+        float base = (1-noise_v-sign_v);
+        float v = hash_point(pos_x, pos_y);
+        float s  =(sin((float(pos_x)*v)/scale)+1)/4+(sin((float(pos_y)*sin(v+1))/scale)+1)/4;
+        cout *= (base+v*noise_v+s*sign_v);
+    }else if(kind == MATERIAL_KIND_WOOD){
+        float scale = 5.;
+        float noise_v = 0.05;
+        float sign_v = 0.4;
+        float base = (1-noise_v-sign_v);
+        float v = hash_point(pos_x/10, pos_y/10)*0.8+ hash_point(pos_x/2, pos_y/2)*0.2;
+        float s  =(sin((float(pos_x)*v)/scale)+1)/4+(sin((float(pos_y)*sin(v+1))/scale)+1)/4;
+        cout *= (base+v*noise_v+s*sign_v);
+    }else if(kind == MATERIAL_KIND_METAL){
+        float scale = 1.;
+        float noise_v = 0.12;
+        float sign_v = 0.01;
+        float base = (1-noise_v-sign_v);
+        float v = hash_point(pos_x, pos_y);
+          float s  =(sin((float(pos_x)*v)/scale)+1)/4+(sin((float(pos_y)*sin(v+1))/scale)+1)/4;
+        cout *= (base+v*noise_v+s*sign_v);
+    }else if(kind == MATERIAL_KIND_PAINT){
+        float scale = 1.;
+        float noise_v = 0.01;
+        float sign_v = 0.0;
+        float base = (1-noise_v-sign_v);
+        float v = hash_point(pos_x, pos_y);
+        float s  =(sin((float(pos_x)*v)/scale)+1)/4+(sin((float(pos_y)*sin(v+1))/scale)+1)/4;
+        cout *= (base+v*noise_v+s*sign_v);
+    }else if(kind == MATERIAL_KIND_LIGHT){
+        float scale = 20.;
+        float noise_v = 0.0;
+        float sign_v = 0.0;
+        float base = (1-noise_v-sign_v);
+        float v = hash_point(pos_x, pos_y);
+          float s  =(sin((float(pos_x)*v)/scale)+1)/4+(sin((float(pos_y)*sin(v+1))/scale)+1)/4;
+        cout *= (base+v*noise_v+s*sign_v);
+    }else{
+
+    }
+    return cout;
+}
+
+vec3 process_object_normal_at(vec3 base_normal, int kind, int pos_x, int pos_y){
+    vec3 cout =  base_normal;
+    if(kind == MATERIAL_KIND_PLASTIC){
+        int dv = 1;
+        int x = pos_x /dv;
+        int y = pos_y/dv;
+        float mul = 0.01;
+        float dx = hash_point(x/dv, y/dv)*2-1;
+        float dy = hash_point(x+int(dx*10), y+int(dx*3))*2-1; 
+        float dz = hash_point(x+int(dy*7), y+int(dy*5))*2-1;  
+        vec3 pos = vec3(dx,dy,dz)*mul;
+        cout+= pos;
+    }else if(kind == MATERIAL_KIND_WOOD){
+        int dv = 2;
+        int x = pos_x /dv;
+        int y = pos_y/dv;
+        float mul = 0.05;
+        float dx = hash_point(x/dv, y/dv)*2-1;
+        float dy = hash_point(x+int(dx*10), y+int(dx*3))*2-1; 
+        float dz = hash_point(x+int(dy*7), y+int(dy*5))*2-1;  
+        vec3 pos = vec3(dx,dy,dz)*mul;
+        cout+= pos;
+    }else if(kind == MATERIAL_KIND_METAL){
+        int dv = 1;
+        int x = pos_x /dv;
+        int y = pos_y/dv;
+        float mul = 0.01;
+        float dx = hash_point(x/dv, y/dv)*2-1;
+        float dy = hash_point(x+int(dx*10), y+int(dx*3))*2-1; 
+        float dz = -abs(hash_point(x+int(dy*7), y+int(dy*5))*2-1);  
+        vec3 pos = vec3(dx,dy,dz)*mul;
+        cout+= pos;
+    }else if(kind == MATERIAL_KIND_PAINT){
+        int dv = 1;
+        int x = pos_x /dv;
+        int y = pos_y/dv;
+        float mul = 0.04;
+        float dx = hash_point(x/dv, y/dv);
+        float dy = hash_point(x+int(dx*10), y+int(dx*3))*2-1; 
+        float dz = abs(hash_point(x+int(dy*7), y+int(dy*5))*2-1);  
+        vec3 pos = vec3(dx,dy,dz)*mul;
+        cout+= pos;
+    }else if(kind == MATERIAL_KIND_LIGHT){
+        int dv = 2;
+        int x = pos_x /dv;
+        int y = pos_y/dv;
+        float mul = 0.1;
+        float dx = hash_point(x/dv, y/dv)*2-1;
+        float dy = hash_point(x+int(dx*10), y+int(dx*3))*2-1; 
+        float dz = hash_point(x+int(dy*7), y+int(dy*5))*2-1;  
+        vec3 pos = vec3(dx,dy,dz)*mul;
+        cout+= pos; 
+    }else{
+
+    }
+    return normalize(cout);
+}
 
 PixelData extract_pixel_data(vec4 col) {
     PixelData outp;
     outp.height = col.r / (10.);
     outp.glass_height = col.g;
-    outp.color = v_parse_color(int(col.b * 255));
+    Material mat = v_parse_material(int(col.b*255));
+    outp.color = mat.color;
+    outp.specular = mat.specular;
+    outp.kind = mat.kind;
     return outp;
 }
+
 
 PixelData get_pixel_data_at(int x, int y) {
     if (x >= render_width || x < 0 || y >= render_height || y < 0) {
@@ -139,18 +300,21 @@ ObjectData get_object_data_at(int x, int y) {
     outp.height = base_data.height;
     outp.color = base_data.color;
     outp.glass_height = base_data.glass_height;
+    outp.specular = base_data.specular;
+    outp.kind = base_data.kind;
+    outp.normal = process_object_normal_at(outp.normal, outp.kind, x,y);
     return outp;
 }
 
 float specular_light_contribution(vec3 position, vec3 normal){
-    vec3 input_light_delta =
-        position - input_light_pos;
-    vec3 input_light_direction = normalize(input_light_delta);
+    vec3 input_light_delta =input_light_pos-
+        position ;
+    vec3 input_light_direction = -normalize(input_light_delta);
     float spec_mul = 0.;
     vec3 rf = reflect(input_light_direction, normal);
     vec3 d0 = normalize(get_camera_position()-position);
-    if (dot(rf, d0)>0.6){
-        spec_mul = dot(rf, d0);
+    if (abs(dot(rf, d0))<0.2){
+        spec_mul = 2.*(0.3-abs(dot(rf, d0)));
     }
     return spec_mul;
 }
@@ -161,21 +325,30 @@ vec4 calculate_incident_light(vec3 position, vec3 normal, float directional_obsc
         position - input_light_pos;
     vec3 input_light_direction = normalize(input_light_delta);
     float dist = length(input_light_direction);
-    dist *= dist;
+    dist *= dist*1.1;
     vec3 nhat = -normal;
-    float mul = dot(nhat, input_light_direction) * directional_obscurance;
+    float mul = dot(nhat, input_light_direction) * directional_obscurance/dist;
     if (mul < 0.0) {
         mul = 0.0;
     }
     float spec_mul = specular_light_contribution(position, normal)*directional_obscurance;
-    return outv*mul*(1-specular)+(outv*spec_mul)*specular;
+    return outv*mul+(outv*spec_mul)*specular;
 }
+
+
 
 vec4 handle_materials(ObjectData obj, int pos_x, int pos_y,vec4 base_lighting, float directional_obscurance) {
     vec4 outv = base_lighting;         
-    outv.r *= obj.color.r;
-    outv.g *= obj.color.g;
-    outv.b *= obj.color.b;   
+    vec4 col = process_object_color_at(obj.color,obj.kind, pos_x, pos_y);
+    outv.r *= col.r;
+    outv.g *= col.g;
+    outv.b *= col.b;   
+    if(obj.specular>0.0){
+         vec3 pos = vec3(float(pos_x), float(pos_y), obj.height);
+        float vs = specular_light_contribution(pos, obj.normal);
+        vec4 tmp = calculate_incident_light(pos, obj.normal, directional_obscurance, 1.);  
+        outv = tmp*vs*obj.specular+outv*(1.-vs);
+    }
     if (obj.glass_height>0.0){
         vec3 pos = vec3(float(pos_x), float(pos_y), obj.height+obj.glass_height);
         float vs = sqrt(specular_light_contribution(pos, obj.normal));
@@ -186,8 +359,11 @@ vec4 handle_materials(ObjectData obj, int pos_x, int pos_y,vec4 base_lighting, f
 }
 
 vec4 calculate_lighting(int pos_x, int pos_y, int inner_radius,
-                        int outer_radius) {
+                        int outer_radius) { 
     ObjectData obj = get_object_data_at(pos_x, pos_y);
+    if (obj.kind == MATERIAL_KIND_VOID){
+        return obj.color;
+    }
     vec4 outp = vec4(0.);
     vec3 glare = vec3(0.);
     float directional_obscurance = 1.;
@@ -303,8 +479,7 @@ vec4 calculate_lighting(int pos_x, int pos_y, int inner_radius,
     if (directional_obscurance < 0.05) {
         directional_obscurance = 0.05;
     }
-
-    outp += calculate_incident_light(vec3(float(pos_x), float(pos_y), obj.height), obj.normal, directional_obscurance, 0.0);
+    outp += calculate_incident_light(vec3(float(pos_x), float(pos_y), obj.height), obj.normal, directional_obscurance,0.);
     vec4 tout  = handle_materials(obj, pos_x, pos_y, outp, directional_obscurance);
     glare /= (float(outer_radius * outer_radius) * 3.14);
     glare *= 2.;
