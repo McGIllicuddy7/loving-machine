@@ -1,13 +1,8 @@
-package physics
-import "core:container/queue"
-import "core:fmt"
+package engine
 import "core:math"
-import "core:math/fixed"
 import "core:math/linalg"
-import "core:math/rand"
 import "core:mem"
-import "core:time"
-import "vendor:raylib"
+import "core:sync"
 
 Vec3 :: [3]f64
 Quat :: quaternion256
@@ -23,12 +18,14 @@ Transform :: struct {
 }
 
 PhysicsObject :: struct {
-	using trans:   Transform,
-	is_projectile: bool,
-	velocity:      Vec3,
-	length:        f64, //x,
-	width:         f64, //y,
-	height:        f64, //z,
+	using trans:      Transform,
+	is_projectile:    bool,
+	is_static:        bool,
+	velocity:         Vec3,
+	angular_velocity: Vec3,
+	length:           f64, //x,
+	width:            f64, //y,
+	height:           f64, //z,
 }
 
 TaggedPhysicsObject :: struct {
@@ -47,9 +44,9 @@ TileMapNode :: struct {
 	children: [dynamic]TaggedPhysicsObject,
 }
 Tile :: struct {
-	x: int,
-	y: int,
-	z: int,
+	x: i64,
+	y: i64,
+	z: i64,
 }
 TileMap :: struct {
 	tile_sz_x: f64,
@@ -139,7 +136,7 @@ get_object_radius :: proc(obj: PhysicsObject) -> f64 {
 	return max(dists[0], dists[1], dists[2], dists[3], dists[4], dists[5], dists[6], dists[7])
 }
 
-//returns normal pointing from b to a
+//returns normal poi64ing from b to a
 check_collision_objects :: proc(
 	object_a: PhysicsObject,
 	object_b: PhysicsObject,
@@ -156,16 +153,16 @@ check_collision_objects :: proc(
 	}
 	a_vecs := get_collision_vectors(object_a)
 	b_vecs := get_collision_vectors(object_b)
-	a_points := get_vertices(object_a)
-	b_points := get_vertices(object_b)
+	a_poi64s := get_vertices(object_a)
+	b_poi64s := get_vertices(object_b)
 	min_dist := dist
 	min_normal := a_vecs[0]
 	for i in a_vecs {
-		a_min := linalg.dot(a_points[0], i)
+		a_min := linalg.dot(a_poi64s[0], i)
 		a_max := a_min
-		b_min := linalg.dot(b_points[0], i)
+		b_min := linalg.dot(b_poi64s[0], i)
 		b_max := b_min
-		for j in a_points {
+		for j in a_poi64s {
 			tmp := linalg.dot(j, i)
 			if tmp < a_min {
 				a_min = tmp
@@ -174,7 +171,7 @@ check_collision_objects :: proc(
 				a_max = tmp
 			}
 		}
-		for j in b_points {
+		for j in b_poi64s {
 			tmp := linalg.dot(j, i)
 			if tmp < b_min {
 				b_min = tmp
@@ -193,11 +190,11 @@ check_collision_objects :: proc(
 		}
 	}
 	for i in a_vecs {
-		a_min := linalg.dot(a_points[0], i)
+		a_min := linalg.dot(a_poi64s[0], i)
 		a_max := a_min
-		b_min := linalg.dot(b_points[0], i)
+		b_min := linalg.dot(b_poi64s[0], i)
 		b_max := b_min
-		for j in a_points {
+		for j in a_poi64s {
 			tmp := linalg.dot(j, i)
 			if tmp < a_min {
 				a_min = tmp
@@ -206,7 +203,7 @@ check_collision_objects :: proc(
 				a_max = tmp
 			}
 		}
-		for j in b_points {
+		for j in b_poi64s {
 			tmp := linalg.dot(j, i)
 			if tmp < b_min {
 				b_min = tmp
@@ -298,25 +295,25 @@ raycast_against_object :: proc(
 		return
 	}
 	hit_distance = 0 if tmin < 0 else tmin
-	hit_point_act := start + direction * hit_distance
-	hit_point := s0 + dir * hit_distance
+	hit_poi64_act := start + direction * hit_distance
+	hit_poi64 := s0 + dir * hit_distance
 	epsilon := 0.01
 	h_normal: Vec3
-	if (abs(hit_point.x - x_min) < epsilon) {
+	if (abs(hit_poi64.x - x_min) < epsilon) {
 		h_normal = {-1, 0, 0}
-	} else if (abs(hit_point.x - x_max) < epsilon) {
+	} else if (abs(hit_poi64.x - x_max) < epsilon) {
 		h_normal = {1, 0, 0}
-	} else if (abs(hit_point.y - y_min) < epsilon) {
+	} else if (abs(hit_poi64.y - y_min) < epsilon) {
 		h_normal = {0, -1, 0}
-	} else if (abs(hit_point.y - y_max) < epsilon) {
+	} else if (abs(hit_poi64.y - y_max) < epsilon) {
 		h_normal = {0, 1, 0}
-	} else if (abs(hit_point.z - z_min) < epsilon) {
+	} else if (abs(hit_poi64.z - z_min) < epsilon) {
 		h_normal = {0, 0, -1}
-	} else if (abs(hit_point.z - z_max) < epsilon) {
+	} else if (abs(hit_poi64.z - z_max) < epsilon) {
 		h_normal = {0, 0, 1}
 	}
 	hit = true
-	hit_location = hit_point_act
+	hit_location = hit_poi64_act
 	hit_normal = linalg.quaternion256_mul_vector3(object.rotation, h_normal)
 	return
 }
@@ -336,15 +333,15 @@ generate_collision_data :: proc(
 		if i.ptr.is_projectile {
 			continue
 		}
-		dx := cast(int)math.round(i.ptr.length / data.tile_map.tile_sz_x)
-		dy := cast(int)math.round(i.ptr.width / data.tile_map.tile_sz_y)
-		dz := cast(int)math.round(i.ptr.height / data.tile_map.tile_sz_z)
+		dx := cast(i64)math.round(i.ptr.length / data.tile_map.tile_sz_x)
+		dy := cast(i64)math.round(i.ptr.width / data.tile_map.tile_sz_y)
+		dz := cast(i64)math.round(i.ptr.height / data.tile_map.tile_sz_z)
 		for z in -dz ..= dz {
 			for y in -dy ..= dy {
 				for x in -dx ..= dx {
-					px := x + cast(int)(i.ptr.position.x / data.tile_map.tile_sz_x)
-					py := y + cast(int)(i.ptr.position.y / data.tile_map.tile_sz_y)
-					pz := z + cast(int)(i.ptr.position.z / data.tile_map.tile_sz_z)
+					px := x + cast(i64)(i.ptr.position.x / data.tile_map.tile_sz_x)
+					py := y + cast(i64)(i.ptr.position.y / data.tile_map.tile_sz_y)
+					pz := z + cast(i64)(i.ptr.position.z / data.tile_map.tile_sz_z)
 					ps := Tile{px, py, pz}
 					if !(ps in data.tile_map.tiles) {
 						data.tile_map.tiles[ps] = make([dynamic]TaggedPhysicsObject, allocator)
@@ -369,17 +366,27 @@ physics_update :: proc(
 	}
 	data: CollisionData = generate_collision_data(objects, frame_allocator)
 	{
-		/*	fmt.printf("values:\n")
+		/*	fmt.pri64f("values:\n")
 		for i, j in data.tile_map.tiles {
-			fmt.printf("\t%v %d\n", i, len(j))
+			fmt.pri64f("\t%v %d\n", i, len(j))
 		}*/
 	}
 	events := make([dynamic]CollisionEvent, frame_allocator)
 	hit_set := make(map[CollisionPair]u8)
 	defer delete(hit_set)
+
 	for i in objects {
 		id := i.ref
 		phys := i.ptr
+		old_rot := phys.rotation
+		phys.rotation =
+			linalg.quaternion_from_euler_angles_f64(
+				phys.angular_velocity.x * delta_time,
+				phys.angular_velocity.y * delta_time,
+				phys.angular_velocity.z * delta_time,
+				.XYZ,
+			) *
+			phys.rotation
 		if (phys.velocity == Vec3{0, 0, 0}) {
 			continue
 		}
@@ -399,7 +406,9 @@ physics_update :: proc(
 			phys.position = base_pos + disp * nvel
 			hit_ref, hit_obj, hit_norm, max_depth, did_hit := check_collision_against(i, data)
 			if did_hit {
+				phys.rotation = old_rot
 				phys.position = old_pos
+				phys.angular_velocity *= -0.5
 				p := CollisionPair{i.ref, hit_ref}
 				if !(p in hit_set) {
 					hit_set[p] = 0
@@ -419,8 +428,8 @@ physics_update :: proc(
 					}
 					append(&events, e1)
 					append(&events, e2)
-					phys.velocity = linalg.reflect(phys.velocity, e1.normal)
-					hit_obj.velocity = linalg.reflect(hit_obj.velocity, e2.normal)
+					phys.velocity = linalg.reflect(phys.velocity, e1.normal) * 0.5
+					hit_obj.velocity = linalg.reflect(hit_obj.velocity, e2.normal) * 0.5
 				}
 				break
 			}
@@ -440,12 +449,12 @@ check_collision_against :: proc(
 	did_hit: bool,
 ) {
 	max_depth = -1.
-	px := cast(int)(obj.ptr.position.x / set.tile_map.tile_sz_x)
-	py := cast(int)(obj.ptr.position.y / set.tile_map.tile_sz_y)
-	pz := cast(int)(obj.ptr.position.z / set.tile_map.tile_sz_z)
-	for dz in -1 ..= 1 {
-		for dy in -1 ..= 1 {
-			for dx in -1 ..= 1 {
+	px := cast(i64)(obj.ptr.position.x / set.tile_map.tile_sz_x)
+	py := cast(i64)(obj.ptr.position.y / set.tile_map.tile_sz_y)
+	pz := cast(i64)(obj.ptr.position.z / set.tile_map.tile_sz_z)
+	for dz in -cast(i64)1 ..= 1 {
+		for dy in -cast(i64)1 ..= 1 {
+			for dx in -cast(i64)1 ..= 1 {
 				ps_act := Tile{px + dx, py + dy, pz + dz}
 				if !(ps_act in set.tile_map.tiles) {
 					continue
@@ -472,125 +481,3 @@ check_collision_against :: proc(
 
 	return
 }
-/*
-raycasting_test :: proc() {
-	success_count := 0
-	time_count: u128 = 0
-	max_dur: f64 = 0
-	degenerate: struct {
-		object:    PhysicsObject,
-		start:     Vec3,
-		direction: Vec3,
-		length:    f64,
-		hit:       bool,
-	}
-	for _ in 0 ..< 10000 {
-		pitch: f64 = cast(f64)(rand.float32() * 360)
-		yaw := cast(f64)(rand.float32() * 360)
-		rot := linalg.quaternion_from_euler_angles_f64(pitch, yaw, cast(f64)0.0, .XYZ)
-		pos_x: f64 = cast(f64)(rand.int32_range(-100, 101))
-		pos_y: f64 = cast(f64)(rand.int32_range(-100, 101))
-		pos_z: f64 = cast(f64)(rand.int32_range(-100, 101))
-		pos: Vec3 = {pos_x, pos_y, pos_z}
-		scale_x: f64 = cast(f64)(rand.int32_range(1, 10))
-		scale_y: f64 = cast(f64)(rand.int32_range(1, 10))
-		scale_z: f64 = cast(f64)(rand.int32_range(1, 10))
-		obj: PhysicsObject
-		obj.position = pos
-		obj.rotation = rot
-		obj.scale = {1, 1, 1}
-		obj.length = scale_x
-		obj.width = scale_y
-		obj.height = scale_z
-		for _ in 0 ..< 10000 {
-			dpos_x: f64 = cast(f64)(rand.int32_range(-100, 101)) * 15
-			dpos_y: f64 = cast(f64)(rand.int32_range(-100, 101)) * 15
-			dpos_z: f64 = cast(f64)(rand.int32_range(-100, 101)) * 15
-			vs: Vec3 = {dpos_x, dpos_y, dpos_z}
-			if vs == {0, 0, 0} {
-				continue
-			}
-			{
-				s0 := vs + pos
-				delta := -linalg.normalize(vs)
-				len := linalg.length(vs) * 4
-				{
-					t0 := time.now()
-					hit, _, _ := raycast_against_object(s0, delta, len, obj)
-					if !hit {
-						fmt.printf(
-							"failed to hit:start:%v, delta:%v, len:%v, object:%v\n",
-							s0,
-							delta,
-							len,
-							obj,
-						)
-					}
-					assert(hit)
-					success_count += 1
-					dur := time.since(t0)
-					if time.duration_milliseconds(dur) > 1 {
-						fmt.printf(
-							"took:%f milliseconds to run\n",
-							time.duration_milliseconds(dur),
-						)
-					}
-					tmp_dur := time.duration_microseconds(dur)
-					t_time := cast(u128)tmp_dur
-					time_count += t_time
-					if tmp_dur > max_dur {
-						max_dur = tmp_dur
-						degenerate.direction = delta
-						degenerate.hit = hit
-						degenerate.length = len
-						degenerate.start = s0
-						degenerate.object = obj
-					}
-				}
-			}
-			{
-				t0 := time.now()
-				s0 := vs + pos
-				delta := linalg.normalize(vs)
-				len := linalg.length(vs) * 4
-				hit, _, _ := raycast_against_object(s0, delta, len, obj)
-				if hit {
-					fmt.printf(
-						"failed to miss:start:%v, delta:%v, len:%v, object:%v\n",
-						s0,
-						delta,
-						len,
-						obj,
-					)
-				}
-				assert(!hit)
-				success_count += 1
-				dur := time.since(t0)
-				if time.duration_milliseconds(dur) > 1 {
-					fmt.printf("took:%f milliseconds to run\n", time.duration_milliseconds(dur))
-				}
-				tmp_dur := time.duration_microseconds(dur)
-				t_time := cast(u128)tmp_dur
-				time_count += t_time
-				if tmp_dur > max_dur {
-					max_dur = tmp_dur
-					degenerate.direction = delta
-					degenerate.hit = hit
-					degenerate.length = len
-					degenerate.start = s0
-					degenerate.object = obj
-				}
-			}
-		}
-		if success_count % 1000000 == 0 {
-			fmt.printf("success count:%d\n", success_count)
-		}
-	}
-	fmt.printf(
-		"took on average:%v microseconds and at most %f microseconds\n degenerate example:%v\n",
-		cast(f64)time_count / cast(f64)success_count,
-		max_dur,
-		degenerate,
-	)
-}
-*/
