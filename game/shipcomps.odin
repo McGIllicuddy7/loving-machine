@@ -92,3 +92,31 @@ create_room :: proc(
 		}
 	}
 }
+
+has_tile_of_type :: proc(this: ^ShipTileSet, type: ShipTileType) -> bool {
+	for i in this.tiles {
+		for j in i {
+			for k in j {
+				if k.type == type {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+has_functioning_tile_of_type :: proc(this: ^ShipTileSet, type: ShipTileType) -> bool {
+	for i in this.tiles {
+		for j in i {
+			for k in j {
+				if k.type == type && k.health > 0 {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+has_tile_facing_local_direction :: proc(this: ^ShipTileSet, tile: ShipTileType, direction: Vec3) {}

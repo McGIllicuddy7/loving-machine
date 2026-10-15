@@ -102,11 +102,12 @@ GraphicsCommand :: struct {
 }
 
 GraphicsCommandBuffer :: struct {
-	lock:     sync.Mutex,
-	camera:   raylib.Camera3D,
-	objects:  [dynamic]GraphicsObject,
-	commands: [dynamic]GraphicsCommand,
-	arena:    mem.Dynamic_Arena,
+	lock:            sync.Mutex,
+	camera:          raylib.Camera3D,
+	light_direction: raylib.Vector3,
+	objects:         [dynamic]GraphicsObject,
+	commands:        [dynamic]GraphicsCommand,
+	arena:           mem.Dynamic_Arena,
 }
 
 GraphicsContext :: struct {
@@ -350,6 +351,12 @@ graphics_step :: proc() {
 	raylib.BeginDrawing()
 	raylib.ClearBackground(raylib.BLACK)
 	raylib.BeginMode3D(this.read_command_buffer.camera)
+	{
+		dir_loc := raylib.GetShaderLocation(this.shader, "light_direction")
+		assert(dir_loc != -1)
+		tmp := linalg.normalize(raylib.Vector3{2, 0, 1})
+		raylib.SetShaderValue(this.shader, dir_loc, &tmp, .VEC3)
+	}
 	//	raylib.BeginShaderMode(this.shader)
 	for i in this.read_command_buffer.objects {
 		if !(i.mesh_id in this.meshes) {

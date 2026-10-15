@@ -17,15 +17,23 @@ Transform :: struct {
 	scale:    Vec3,
 }
 
+CollisionResponse :: enum {
+	Elastic,
+	Slide,
+	Plastic,
+	Halt,
+}
+
 PhysicsObject :: struct {
-	using trans:      Transform,
-	is_projectile:    bool,
-	is_static:        bool,
-	velocity:         Vec3,
-	angular_velocity: Vec3,
-	length:           f64, //x,
-	width:            f64, //y,
-	height:           f64, //z,
+	using trans:        Transform,
+	collision_response: CollisionResponse,
+	is_projectile:      bool,
+	is_static:          bool,
+	velocity:           Vec3,
+	angular_velocity:   Vec3,
+	length:             f64, //x,
+	width:              f64, //y,
+	height:             f64, //z,
 }
 
 TaggedPhysicsObject :: struct {
@@ -324,9 +332,27 @@ generate_collision_data :: proc(
 ) -> CollisionData {
 	data: CollisionData
 	data.objects = objects
-	data.tile_map.tile_sz_x = 2.
-	data.tile_map.tile_sz_y = 2.
-	data.tile_map.tile_sz_z = 2.
+
+	data.tile_map.tile_sz_x = 1.
+	data.tile_map.tile_sz_y = 1.
+	data.tile_map.tile_sz_z = 1.
+	if len(objects) > 1 {
+		prev_pos := objects[0].ptr.position
+		average_distance := 0.
+		count := 1.
+		for i in 1 ..< len(objects) {
+			tmp := objects[i].ptr.position
+			average_distance += linalg.distance(prev_pos, tmp)
+			count += 1.
+			prev_pos = tmp
+		}
+		average_distance /= count
+		if average_distance > 0.5 {
+			data.tile_map.tile_sz_x = average_distance / 2
+			data.tile_map.tile_sz_y = average_distance / 2
+			data.tile_map.tile_sz_z = average_distance / 2
+		}
+	}
 	data.tile_map.tiles = make(map[Tile][dynamic]TaggedPhysicsObject, allocator)
 	reserve_map(&data.tile_map.tiles, len(objects))
 	for i in objects {
@@ -393,7 +419,7 @@ physics_update :: proc(
 		base_pos := phys.position
 		old_pos := phys.position
 		max_disp := linalg.length(phys.velocity * delta_time)
-		DELTA :: 0.01
+		DELTA :: 1.
 		disp: f64 = 0.00
 		nvel := phys.velocity / (linalg.length(phys.velocity))
 		for disp < max_disp {
@@ -428,8 +454,32 @@ physics_update :: proc(
 					}
 					append(&events, e1)
 					append(&events, e2)
-					phys.velocity = linalg.reflect(phys.velocity, e1.normal) * 0.5
-					hit_obj.velocity = linalg.reflect(hit_obj.velocity, e2.normal) * 0.5
+					switch phys.collision_response {
+					case .Elastic:
+						phys.velocity = linalg.reflect(phys.velocity, e1.normal)
+					case .Plastic:
+						phys.velocity = linalg.reflect(phys.velocity, e1.normal) * 0.8
+						if linalg.length(phys.velocity) < 0.01 {
+							phys.velocity = {0, 0, 0}
+						}
+					case .Halt:
+						phys.velocity = {0, 0, 0}
+					case .Slide:
+						phys.velocity -= linalg.dot(phys.velocity, e1.normal) * e1.normal
+					}
+					switch hit_obj.collision_response {
+					case .Elastic:
+						hit_obj.velocity = linalg.reflect(hit_obj.velocity, e2.normal)
+					case .Plastic:
+						hit_obj.velocity = linalg.reflect(hit_obj.velocity, e2.normal) * 0.8
+						if linalg.length(hit_obj.velocity) < 0.01 {
+							hit_obj.velocity = {0, 0, 0}
+						}
+					case .Halt:
+						hit_obj.velocity = {0, 0, 0}
+					case .Slide:
+						hit_obj.velocity -= linalg.dot(hit_obj.velocity, e2.normal) * e2.normal
+					}
 				}
 				break
 			}

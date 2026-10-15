@@ -19,7 +19,7 @@ MAX_ENTITY_COUNT :: 16384
 EntityTag :: enum {
 	OnFire,
 	IsPlayer,
-	IsVisible,
+	IsInvisible,
 	IsTransferred,
 }
 
@@ -195,7 +195,7 @@ run_graphics :: proc() {
 	for i in 0 ..< len(RUNTIME.level.entity_meta_data) {
 		if RUNTIME.level.entity_meta_data[i].is_alive {
 			tmp := &RUNTIME.level.entities[i]
-			if .IsVisible in tmp.tags {
+			if !(.IsInvisible in tmp.tags) {
 				engine.bind_model(tmp.mesh, tmp.physics.trans, tmp.tint)
 			}
 		}
