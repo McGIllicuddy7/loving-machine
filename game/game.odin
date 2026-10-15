@@ -1,6 +1,7 @@
 package game
 import "core:container/queue"
 import "core:fmt"
+import "core:math/linalg"
 import "core:mem"
 import "core:strings"
 import "core:sync"
@@ -56,6 +57,7 @@ Entity :: struct {
 	health:       i32,
 	tint:         raylib.Color,
 	ai_data:      AiData,
+	ship_data:    ^ShipTileSet,
 }
 
 DamageEvent :: struct {
@@ -100,12 +102,13 @@ Level :: struct {
 }
 
 GameRuntime :: struct {
-	dbg_camera:    raylib.Camera3D,
-	level:         Level,
-	systems:       map[string]System,
-	hooks:         map[string]EventHook,
-	transfer_lock: sync.Mutex,
-	transfer_info: LoadLevelInfo,
+	use_debug_camera: bool,
+	dbg_camera:       raylib.Camera3D,
+	level:            Level,
+	systems:          map[string]System,
+	hooks:            map[string]EventHook,
+	transfer_lock:    sync.Mutex,
+	transfer_info:    LoadLevelInfo,
 }
 
 RUNTIME: GameRuntime
@@ -116,6 +119,10 @@ game_init :: proc() {
 	RUNTIME.systems = make(map[string]System)
 	RUNTIME.hooks = make(map[string]EventHook)
 	queue.init(&RUNTIME.level.event_queue)
+	RUNTIME.dbg_camera.target = {1, 0, 0}
+	RUNTIME.dbg_camera.projection = .PERSPECTIVE
+	RUNTIME.dbg_camera.fovy = 90.
+	RUNTIME.dbg_camera.up = {0, 0, 1}
 }
 
 register_system :: proc(name: string, system: System) {
@@ -160,6 +167,7 @@ process_events :: proc() {
 }
 
 run_systems :: proc() {
+	enable_debug_camera()
 	RUNTIME.transfer_info = {}
 	ft := raylib.GetFrameTime()
 	for _, sys in RUNTIME.systems {
@@ -191,6 +199,10 @@ run_graphics :: proc() {
 				engine.bind_model(tmp.mesh, tmp.physics.trans, tmp.tint)
 			}
 		}
+	}
+	if RUNTIME.use_debug_camera {
+		raylib.UpdateCamera(&RUNTIME.dbg_camera, .FREE)
+		engine.set_camera(RUNTIME.dbg_camera)
 	}
 }
 
@@ -236,6 +248,7 @@ create_entity :: proc(base: Entity = {}) -> (EntityRef, ^Entity) {
 			rf := EntityRef{idx, gen}
 			ptr := &RUNTIME.level.entities[i]
 			ptr^ = base
+			ptr.this_ref = rf
 			return rf, ptr
 		}
 	}
@@ -262,6 +275,9 @@ run_entity_destructor :: proc(enty: ^Entity) {
 	}
 	if enty.mesh != "" {
 		delete(enty.mesh)
+	}
+	if enty.ship_data != nil {
+		free(enty.ship_data)
 	}
 	enty^ = {}
 }
@@ -319,6 +335,10 @@ unload_level :: proc() {
 entity_clone :: proc(entity: Entity) -> Entity {
 	tmp := entity
 	tmp.mesh = strings.clone(tmp.mesh)
+	tmp.ship_data = nil
+	if entity.ship_data != nil {
+		tmp.ship_data = new_clone(entity.ship_data^)
+	}
 	return tmp
 }
 
@@ -404,4 +424,33 @@ game_fini :: proc() {
 	queue.destroy(&RUNTIME.level.event_queue)
 	delete(RUNTIME.hooks)
 	delete(RUNTIME.systems)
+}
+
+enable_debug_camera :: proc() {
+	RUNTIME.use_debug_camera = true
+}
+
+disable_debug_camera :: proc() {
+	RUNTIME.use_debug_camera = false
+}
+
+
+set_camera_pos_rot :: proc(base_entity: ^Entity, offset_pos: Vec3, offset_rotation: Quat) {
+	base_pos := base_entity.physics.position
+	base_rot := base_entity.physics.rotation
+	rotation := offset_rotation * base_rot
+	off := linalg.quaternion256_mul_vector3(rotation, offset_pos)
+	position := base_pos + off
+	forward := linalg.quaternion256_mul_vector3(rotation, Vec3{1, 0, 0})
+	up := linalg.quaternion256_mul_vector3(rotation, Vec3{0, 0, 1})
+	target := position + forward
+	cam := raylib.Camera3D {
+		cast([3]f32)position,
+		cast([3]f32)target,
+		cast([3]f32)up,
+		90.,
+		.PERSPECTIVE,
+	}
+	disable_debug_camera()
+	engine.set_camera(cam)
 }

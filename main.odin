@@ -18,6 +18,7 @@ main :: proc() {
 	}
 }
 game_main :: proc() {
+	fmt.printf("size of entity:%d, sizeof level:%d\n", size_of(game.Entity), size_of(game.Level))
 	game.game_init()
 	defer game.game_fini()
 	register_systems_and_hooks()
@@ -26,16 +27,12 @@ game_main :: proc() {
 }
 
 register_systems_and_hooks :: proc() {
-	game.register_system("gay sex:3", proc(delta_time: f32) {
-		engine.draw_rectangle_rounded(250, 250, 500, 25, raylib.DARKGRAY)
-		engine.draw_text("henlo toast i love you", 300, 254, 16, raylib.DARKGREEN)
-	})
 }
 
 startup_logic :: proc() {
-	engine.log("hello world!", 40.)
-	engine.log("hello toast i love you<3", 40.)
-	for i in 0 ..< 25 {
-		engine.log(fmt.tprintf("%d", i), cast(f64)i)
+	for _i in 0 ..< 100 {
+		spawn_asteroid(
+			{rand.float64() * 2 - 1, rand.float64() * 2 - 1, rand.float64() * 2 - 1} * 10.,
+		)
 	}
 }

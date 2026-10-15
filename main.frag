@@ -2,6 +2,7 @@
 
 // Input vertex attributes (from vertex shader)
 in vec2 fragTexCoord;
+in vec3 fragNormal;
 in vec4 fragColor;
 
 // Input uniform values
@@ -18,5 +19,8 @@ void main()
     // Texel color fetching from texture sampler
     vec4 texelColor = texture(texture0, fragTexCoord);
     vec4 base_color = texelColor*colDiffuse*fragColor; 
-    finalColor = base_color;
+    float alpha = base_color.a;
+    float mul = dot(fragNormal, normalize(vec3(10,0,1)))+0.3;
+    finalColor = base_color*mul;
+    finalColor.a = alpha;
 }

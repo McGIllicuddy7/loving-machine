@@ -350,7 +350,7 @@ graphics_step :: proc() {
 	raylib.BeginDrawing()
 	raylib.ClearBackground(raylib.BLACK)
 	raylib.BeginMode3D(this.read_command_buffer.camera)
-	raylib.BeginShaderMode(this.shader)
+	//	raylib.BeginShaderMode(this.shader)
 	for i in this.read_command_buffer.objects {
 		if !(i.mesh_id in this.meshes) {
 			continue
@@ -358,6 +358,9 @@ graphics_step :: proc() {
 		angle, rot_axis := linalg.angle_axis_from_quaternion_f64(i.transform.rotation)
 		pos := cast(raylib.Vector3)i.transform.position
 		scale := cast(raylib.Vector3)i.transform.scale
+		msh := &this.meshes[i.mesh_id]
+		old_shade := msh.materials[0].shader
+		msh.materials[0].shader = this.shader
 		raylib.DrawModelEx(
 			this.meshes[i.mesh_id],
 			pos,
@@ -366,8 +369,9 @@ graphics_step :: proc() {
 			scale,
 			i.tint,
 		)
+		msh.materials[0].shader = old_shade
 	}
-	raylib.EndShaderMode()
+	//	raylib.EndShaderMode()
 	raylib.EndMode3D()
 	for layer in 0 ..= max_layer_idx {
 		for i in this.read_command_buffer.commands {
@@ -492,6 +496,7 @@ create_command_buffer :: proc() -> ^GraphicsCommandBuffer {
 
 create_graphics_context :: proc() -> ^GraphicsContext {
 	raylib.InitWindow(1000, 1000, "hello window!")
+	raylib.SetTargetFPS(61)
 	out := new(GraphicsContext)
 	out.meshes = make(map[string]raylib.Model)
 	out.textures = make(map[string]raylib.Texture)
@@ -512,7 +517,7 @@ create_graphics_context :: proc() -> ^GraphicsContext {
 		torus_model := raylib.LoadModelFromMesh(torus)
 		out.meshes[strings.clone("torus")] = torus_model
 	}
-	out.shader = raylib.LoadShader(nil, "main.frag")
+	out.shader = raylib.LoadShader("main.vert", "main.frag")
 	out.font = raylib.LoadFont("Ac437_IBM_VGA_9x16.ttf")
 	out.write_command_buffer = create_command_buffer()
 	out.read_command_buffer = create_command_buffer()
