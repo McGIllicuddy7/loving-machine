@@ -1,5 +1,6 @@
 package engine
 import "core:fmt"
+import "core:math"
 import "core:math/linalg"
 import "core:mem"
 import "core:strings"
@@ -8,6 +9,7 @@ import "vendor:raylib"
 
 GraphicsObject :: struct {
 	transform: Transform,
+	scale:     Vec3,
 	mesh_id:   string,
 	tint:      raylib.Color,
 }
@@ -304,12 +306,13 @@ ensure_texture_loaded :: proc(name: string) {
 	command_buffer_write_cmd(cmd)
 }
 
-bind_model :: proc(mesh_id: string, transform: Transform, tint: raylib.Color) {
+bind_model :: proc(mesh_id: string, transform: Transform, scale: Vec3, tint: raylib.Color) {
 	command_buffer_write_lock()
 	defer command_buffer_write_unlock()
 	object := GraphicsObject{}
 	object.mesh_id = strings.clone(mesh_id, write_buffer_alloc())
 	object.transform = transform
+	object.scale = scale
 	object.tint = tint
 	command_buffer_write_object(object)
 }
@@ -364,18 +367,19 @@ graphics_step :: proc() {
 		}
 		angle, rot_axis := linalg.angle_axis_from_quaternion_f64(i.transform.rotation)
 		pos := cast(raylib.Vector3)i.transform.position
-		scale := cast(raylib.Vector3)i.transform.scale
+		scale := cast(raylib.Vector3)i.scale
 		msh := &this.meshes[i.mesh_id]
 		old_shade := msh.materials[0].shader
 		msh.materials[0].shader = this.shader
-		raylib.DrawModelEx(
-			this.meshes[i.mesh_id],
-			pos,
-			cast(raylib.Vector3)rot_axis,
-			cast(f32)angle,
-			scale,
-			i.tint,
-		)
+		base_rot := Quat(1)
+		pi :: math.PI
+		if i.mesh_id == "cylinder" || true {
+			base_rot = linalg.quaternion_from_euler_angles_f64(0., 00., pi / 2, .XYZ)
+		}
+		msh.transform =
+			raylib.MatrixCompose(pos, cast(quaternion128)i.transform.rotation, scale) *
+			raylib.MatrixCompose({}, cast(quaternion128)base_rot, {1, 1, 1})
+		raylib.DrawModel(msh^, {}, 1., i.tint)
 		msh.materials[0].shader = old_shade
 	}
 	//	raylib.EndShaderMode()

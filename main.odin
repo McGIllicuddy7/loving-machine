@@ -3,6 +3,7 @@ import "core:fmt"
 import "core:math/linalg"
 import "core:math/rand"
 import "core:mem"
+import "ecs"
 import "game"
 import "game/engine"
 import "vendor:raylib"
@@ -27,6 +28,7 @@ game_main :: proc() {
 }
 
 register_systems_and_hooks :: proc() {
+	game.register_system("input", ecs.input_system)
 }
 
 startup_logic :: proc() {
@@ -35,4 +37,5 @@ startup_logic :: proc() {
 			{rand.float64() * 2 - 1, rand.float64() * 2 - 1, rand.float64() * 2 - 1} * 10.,
 		)
 	}
+	spawn_base_ship({-20, 0, 0}, {1, 0, 0}, true)
 }

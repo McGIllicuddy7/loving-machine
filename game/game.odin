@@ -1,4 +1,5 @@
 package game
+import "../br"
 import "core:container/queue"
 import "core:fmt"
 import "core:math/linalg"
@@ -48,6 +49,7 @@ AiData :: struct {}
 Entity :: struct {
 	_object_lock: sync.Mutex,
 	physics:      PhysicsObject,
+	model_scale:  Vec3,
 	this_ref:     EntityRef,
 	tags:         bit_set[EntityTag],
 	type:         EntityType,
@@ -57,7 +59,7 @@ Entity :: struct {
 	health:       i32,
 	tint:         raylib.Color,
 	ai_data:      AiData,
-	ship_data:    ^ShipTileSet,
+	ship_data:    ShipData,
 }
 
 DamageEvent :: struct {
@@ -124,6 +126,7 @@ game_init :: proc() {
 	RUNTIME.dbg_camera.fovy = 90.
 	RUNTIME.dbg_camera.up = {0, 0, 1}
 }
+
 
 register_system :: proc(name: string, system: System) {
 	RUNTIME.systems[name] = system
@@ -196,7 +199,12 @@ run_graphics :: proc() {
 		if RUNTIME.level.entity_meta_data[i].is_alive {
 			tmp := &RUNTIME.level.entities[i]
 			if !(.IsInvisible in tmp.tags) {
-				engine.bind_model(tmp.mesh, tmp.physics.trans, tmp.tint)
+				engine.bind_model(
+					cast(string)tmp.mesh,
+					tmp.physics.trans,
+					tmp.model_scale,
+					tmp.tint,
+				)
 			}
 		}
 	}
@@ -274,11 +282,9 @@ run_entity_destructor :: proc(enty: ^Entity) {
 		return
 	}
 	if enty.mesh != "" {
-		delete(enty.mesh)
+		delete(cast(string)enty.mesh)
 	}
-	if enty.ship_data != nil {
-		free(enty.ship_data)
-	}
+	destroy_ship_data(enty.ship_data)
 	enty^ = {}
 }
 
@@ -323,22 +329,21 @@ handle_level_transfer :: proc() {
 unload_level :: proc() {
 	queue.clear(&RUNTIME.level.destructor_queue)
 	queue.clear(&RUNTIME.level.event_queue)
-	RUNTIME.level.entity_meta_data = {}
+
 	for i in 0 ..< len(RUNTIME.level.entity_meta_data) {
 		if RUNTIME.level.entity_meta_data[i].is_alive {
 			run_entity_destructor(&RUNTIME.level.entities[i])
 		}
 	}
+	RUNTIME.level.entities = {}
+	RUNTIME.level.entity_meta_data = {}
 	engine.reset_level_alloc()
 }
 
 entity_clone :: proc(entity: Entity) -> Entity {
 	tmp := entity
 	tmp.mesh = strings.clone(tmp.mesh)
-	tmp.ship_data = nil
-	if entity.ship_data != nil {
-		tmp.ship_data = new_clone(entity.ship_data^)
-	}
+	tmp.ship_data = clone_ship_data(tmp.ship_data)
 	return tmp
 }
 
@@ -421,6 +426,7 @@ get_all_entities :: proc() -> []^Entity {
 
 game_fini :: proc() {
 	engine.fini()
+	unload_level()
 	queue.destroy(&RUNTIME.level.event_queue)
 	delete(RUNTIME.hooks)
 	delete(RUNTIME.systems)
@@ -438,7 +444,7 @@ disable_debug_camera :: proc() {
 set_camera_pos_rot :: proc(base_entity: ^Entity, offset_pos: Vec3, offset_rotation: Quat) {
 	base_pos := base_entity.physics.position
 	base_rot := base_entity.physics.rotation
-	rotation := offset_rotation * base_rot
+	rotation := base_rot
 	off := linalg.quaternion256_mul_vector3(rotation, offset_pos)
 	position := base_pos + off
 	forward := linalg.quaternion256_mul_vector3(rotation, Vec3{1, 0, 0})

@@ -14,7 +14,6 @@ EntityRef :: struct {
 Transform :: struct {
 	position: Vec3,
 	rotation: Quat,
-	scale:    Vec3,
 }
 
 CollisionResponse :: enum {
@@ -391,12 +390,6 @@ physics_update :: proc(
 		b: EntityRef,
 	}
 	data: CollisionData = generate_collision_data(objects, frame_allocator)
-	{
-		/*	fmt.pri64f("values:\n")
-		for i, j in data.tile_map.tiles {
-			fmt.pri64f("\t%v %d\n", i, len(j))
-		}*/
-	}
 	events := make([dynamic]CollisionEvent, frame_allocator)
 	hit_set := make(map[CollisionPair]u8)
 	defer delete(hit_set)
@@ -406,13 +399,13 @@ physics_update :: proc(
 		phys := i.ptr
 		old_rot := phys.rotation
 		phys.rotation =
+			phys.rotation *
 			linalg.quaternion_from_euler_angles_f64(
 				phys.angular_velocity.x * delta_time,
 				phys.angular_velocity.y * delta_time,
 				phys.angular_velocity.z * delta_time,
 				.XYZ,
-			) *
-			phys.rotation
+			)
 		if (phys.velocity == Vec3{0, 0, 0}) {
 			continue
 		}
