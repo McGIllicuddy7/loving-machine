@@ -60,12 +60,15 @@ Entity :: struct {
 	tint:         raylib.Color,
 	ai_data:      AiData,
 	ship_data:    ShipData,
+	lifetime:     f64,
 }
 
 DamageEvent :: struct {
 	damaged_entity:  EntityRef,
 	damaging_entity: EntityRef,
 	damage:          i32,
+	point:           Vec3,
+	direction:       Vec3,
 }
 
 EntityDestroyedEvent :: struct {
@@ -107,10 +110,17 @@ GameRuntime :: struct {
 	use_debug_camera: bool,
 	dbg_camera:       raylib.Camera3D,
 	level:            Level,
-	systems:          map[string]System,
-	hooks:            map[string]EventHook,
+	systems:          [dynamic]struct {
+		name: string,
+		sys:  System,
+	},
+	hooks:            [dynamic]struct {
+		name: string,
+		hook: EventHook,
+	},
 	transfer_lock:    sync.Mutex,
 	transfer_info:    LoadLevelInfo,
+	player_idx:       int,
 }
 
 RUNTIME: GameRuntime
@@ -118,8 +128,14 @@ RUNTIME: GameRuntime
 
 game_init :: proc() {
 	engine.init()
-	RUNTIME.systems = make(map[string]System)
-	RUNTIME.hooks = make(map[string]EventHook)
+	RUNTIME.systems = make([dynamic]struct {
+			name: string,
+			sys:  System,
+		})
+	RUNTIME.hooks = make([dynamic]struct {
+			name: string,
+			hook: EventHook,
+		})
 	queue.init(&RUNTIME.level.event_queue)
 	RUNTIME.dbg_camera.target = {1, 0, 0}
 	RUNTIME.dbg_camera.projection = .PERSPECTIVE
@@ -129,19 +145,65 @@ game_init :: proc() {
 
 
 register_system :: proc(name: string, system: System) {
-	RUNTIME.systems[name] = system
+	hit := false
+	for &i in RUNTIME.systems {
+		if i.name == name {
+			i.sys = system
+			hit = true
+			break
+		}
+	}
+	if hit {
+		return
+	}
+	append(&RUNTIME.systems, struct {
+		name: string,
+		sys:  System,
+	}{name, system})
 }
 
 register_event_hook :: proc(name: string, hook: EventHook) {
-	RUNTIME.hooks[name] = hook
+	hit := false
+	for &i in RUNTIME.hooks {
+		if i.name == name {
+			i.hook = hook
+			hit = true
+			break
+		}
+	}
+	if hit {
+		return
+	}
+	append(&RUNTIME.hooks, struct {
+		name: string,
+		hook: EventHook,
+	}{name, hook})
 }
 
 deregister_system :: proc(name: string) {
-	delete_key(&RUNTIME.systems, name)
+	idx := -1
+	for idx0 in 0 ..< len(RUNTIME.systems) {
+		if RUNTIME.systems[idx0].name == name {
+			idx = idx0
+			break
+		}
+	}
+	if idx != -1 {
+		ordered_remove(&RUNTIME.systems, idx)
+	}
 }
 
 deregister_event_hook :: proc(name: string) {
-	delete_key(&RUNTIME.hooks, name)
+	idx := -1
+	for idx0 in 0 ..< len(RUNTIME.hooks) {
+		if RUNTIME.hooks[idx0].name == name {
+			idx = idx0
+			break
+		}
+	}
+	if idx != -1 {
+		ordered_remove(&RUNTIME.hooks, idx)
+	}
 }
 
 broadcast_event :: proc(event: Event) {
@@ -154,8 +216,8 @@ process_events :: proc() {
 			break
 		}
 		ev := queue.pop_front(&RUNTIME.level.event_queue)
-		for _, hook in RUNTIME.hooks {
-			if (hook(ev)) {
+		for hook in RUNTIME.hooks {
+			if (hook.hook(ev)) {
 				break
 			}
 		}
@@ -173,9 +235,6 @@ run_systems :: proc() {
 	enable_debug_camera()
 	RUNTIME.transfer_info = {}
 	ft := raylib.GetFrameTime()
-	for _, sys in RUNTIME.systems {
-		sys(ft)
-	}
 	physics_buffer := make([dynamic]engine.TaggedPhysicsObject)
 	defer delete(physics_buffer)
 	for i in 0 ..< len(RUNTIME.level.entity_meta_data) {
@@ -191,7 +250,22 @@ run_systems :: proc() {
 	for i in events {
 		queue.append(&RUNTIME.level.event_queue, i)
 	}
-
+	for sys in RUNTIME.systems {sys.sys(ft)}
+	for i in 0 ..< len(RUNTIME.level.entity_meta_data) {
+		if RUNTIME.level.entity_meta_data[i].is_alive {
+			v := &RUNTIME.level.entities[i]
+			if v.lifetime > 0. {
+				v.lifetime -= cast(f64)ft
+				if v.lifetime <= 0. {
+					rf := EntityRef {
+						cast(u32)i,
+						cast(u32)RUNTIME.level.entity_meta_data[i].generation,
+					}
+					destroy_entity(rf, rf)
+				}
+			}
+		}
+	}
 }
 
 run_graphics :: proc() {
@@ -329,7 +403,6 @@ handle_level_transfer :: proc() {
 unload_level :: proc() {
 	queue.clear(&RUNTIME.level.destructor_queue)
 	queue.clear(&RUNTIME.level.event_queue)
-
 	for i in 0 ..< len(RUNTIME.level.entity_meta_data) {
 		if RUNTIME.level.entity_meta_data[i].is_alive {
 			run_entity_destructor(&RUNTIME.level.entities[i])
@@ -430,6 +503,7 @@ game_fini :: proc() {
 	queue.destroy(&RUNTIME.level.event_queue)
 	delete(RUNTIME.hooks)
 	delete(RUNTIME.systems)
+	queue.destroy(&RUNTIME.level.destructor_queue)
 }
 
 enable_debug_camera :: proc() {
@@ -459,4 +533,26 @@ set_camera_pos_rot :: proc(base_entity: ^Entity, offset_pos: Vec3, offset_rotati
 	}
 	disable_debug_camera()
 	engine.set_camera(cam)
+}
+
+apply_damage :: proc(
+	entity: EntityRef,
+	source: EntityRef,
+	damage: i32,
+	direction: Vec3,
+	position: Vec3,
+) {
+	broadcast_event(DamageEvent{entity, source, damage, direction, position})
+}
+
+get_forward_vector :: proc(et: ^Entity) -> Vec3 {
+	return linalg.quaternion256_mul_vector3(et.physics.rotation, Vec3{1, 0, 0})
+}
+
+get_right_vector :: proc(et: ^Entity) -> Vec3 {
+	return linalg.quaternion256_mul_vector3(et.physics.rotation, Vec3{0, 1, 0})
+}
+
+get_up_vector :: proc(et: ^Entity) -> Vec3 {
+	return linalg.quaternion256_mul_vector3(et.physics.rotation, Vec3{0, 0, 1})
 }

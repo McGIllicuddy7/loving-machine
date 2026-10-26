@@ -19,6 +19,7 @@ spawn_asteroid :: proc(pos: Vec3) -> EntityRef {
 	ptr.physics.width = 1.
 	ptr.physics.length = 1.
 	ptr.physics.position = pos
+	ptr.physics.mass = 10.
 	ptr.model_scale = {1, 1, 1}
 	ptr.physics.rotation = Quat(1)
 	ptr.physics.velocity = -linalg.normalize(pos)
@@ -73,18 +74,18 @@ BASE_SHIP_DESIGN := game.ShipDesign {
 		},
 		{
 			type = .Laser,
-			offset = {0.8, 0.1, 0.2},
+			offset = {0.8, 0.5, 0.2},
 			dim = {0.1, 0.1, 0.1},
 			direction = Vec3{1, 0, 0},
 		},
 		{
 			type = .Laser,
-			offset = {0.8, -0.1, 0.2},
+			offset = {0.8, -0.5, 0.2},
 			dim = {0.1, 0.1, 0.1},
 			direction = Vec3{1, 0, 0},
 		},
 	},
-	[]game.ItemCount{},
+	[]game.ItemCount{game.ItemCount{.Bullet, 100}},
 }
 
 spawn_base_ship :: proc(pos: Vec3, facing: Vec3, is_player: bool) -> (EntityRef, ^game.Entity) {

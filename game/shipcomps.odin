@@ -3,6 +3,7 @@ package game
 import "core:math/linalg"
 import "core:strings"
 import "vendor:raylib"
+
 Vec3f :: raylib.Vector3
 ShipComponentType :: enum (u8) {
 	Cockpit,
@@ -192,11 +193,13 @@ ship_yard_build :: proc(yard: ^ShipYard) -> (EntityRef, ^Entity) {
 	ent.type = yard.type
 	ent.mesh = strings.clone(yard.mesh)
 	ent.physics.velocity = yard.velocity
+	ent.physics.mass = ent.physics.length * ent.physics.width * ent.physics.height
 	ent.physics.angular_velocity = yard.angular_velocity
 	ent.ship_data.components = make_slice([]ShipComponent, len(yard.components))
 	for i, idx in yard.components {
 		ent.ship_data.components[idx] = i
 	}
+	ent.inventory = yard.inventory
 	return create_entity(ent)
 }
 
@@ -355,7 +358,7 @@ ship_yard_add_component :: proc(
 ) {
 	comp: ShipComponent
 	comp.type = type
-	comp.offset = cast([3]f32)comp.offset
+	comp.offset = cast([3]f32)offset
 	comp.length = cast(f32)length
 	comp.width = cast(f32)width
 	comp.height = cast(f32)height
@@ -364,6 +367,7 @@ ship_yard_add_component :: proc(
 	comp.temperature = 290
 	comp.damage_resistance = get_comp_damage_reistance(type)
 	comp.health = get_comp_max_health(type)
+	append(&yard.components, comp)
 }
 
 ItemCount :: struct {
@@ -407,4 +411,14 @@ ship_yard_from_design :: proc(design: ^ShipDesign) -> ^ShipYard {
 		ship_yard_add_component(out, i.type, i.offset, i.dim.x, i.dim.y, i.dim.z)
 	}
 	return out
+}
+
+get_comp_pos :: proc(entity: ^Entity, comp: ^ShipComponent) -> Vec3 {
+	offset := linalg.quaternion256_mul_vector3(entity.physics.rotation, cast(Vec3)comp.offset)
+	return entity.physics.position + offset
+}
+
+get_comp_direction :: proc(entity: ^Entity, comp: ^ShipComponent) -> Vec3 {
+	offset := linalg.quaternion256_mul_vector3(entity.physics.rotation, cast(Vec3)comp.direction)
+	return offset
 }

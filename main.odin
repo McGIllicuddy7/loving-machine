@@ -18,6 +18,7 @@ main :: proc() {
 		fmt.printf("%v leaked %m\n", leak.location, leak.size)
 	}
 }
+
 game_main :: proc() {
 	fmt.printf("size of entity:%d, sizeof level:%d\n", size_of(game.Entity), size_of(game.Level))
 	game.game_init()
@@ -29,6 +30,7 @@ game_main :: proc() {
 
 register_systems_and_hooks :: proc() {
 	game.register_system("input", ecs.input_system)
+	game.register_event_hook("event hook", ecs.event_handler)
 }
 
 startup_logic :: proc() {

@@ -1,8 +1,10 @@
 package engine
+import "core:fmt"
 import "core:math"
 import "core:math/linalg"
 import "core:mem"
 import "core:sync"
+import "vendor:raylib"
 
 Vec3 :: [3]f64
 Quat :: quaternion256
@@ -33,6 +35,7 @@ PhysicsObject :: struct {
 	length:             f64, //x,
 	width:              f64, //y,
 	height:             f64, //z,
+	mass:               f64,
 }
 
 TaggedPhysicsObject :: struct {
@@ -248,81 +251,107 @@ raycast_against_object :: proc(
 	hit_location: Vec3,
 	hit_normal: Vec3,
 ) {
-	s0 := start - object.position
-	q0 := linalg.quaternion_inverse(object.rotation)
-	s0 = linalg.quaternion256_mul_vector3(q0, s0)
-	dir := linalg.quaternion256_mul_vector3(q0, direction)
-	dir_x := 0.0000001 if (dir.x == 0) else dir.x
-	dir_y := 0.0000001 if (dir.y == 0) else dir.y
-	dir_z := 0.0000001 if (dir.z == 0) else dir.z
-	inv_dir_x := 1 / dir_x
-	inv_dir_y := 1 / dir_y
-	inv_dir_z := 1 / dir_z
-	x_min := -object.length / 2
-	x_max := object.length / 2
-	y_min := -object.width / 2
-	y_max := object.width / 2
-	z_min := -object.height / 2
-	z_max := object.height / 2
-	t_min_x := (x_min - s0.x) * inv_dir_x
-	t_max_x := (x_max - s0.x) * inv_dir_x
-	if (inv_dir_x < 0) {
-		tmp := t_min_x
-		t_min_x = t_max_x
-		t_max_x = tmp
-	}
-	t_min_y := (y_min - s0.y) * inv_dir_y
-	t_max_y := (y_max - s0.y) * inv_dir_y
-	if (inv_dir_y < 0) {
-		tmp := t_min_y
-		t_min_y = t_max_y
-		t_max_y = tmp
-	}
-	t_min_z := (z_min - s0.z) * inv_dir_z
-	t_max_z := (z_max - s0.z) * inv_dir_z
-	if (inv_dir_z < 0) {
-		tmp := t_min_z
-		t_min_z = t_max_z
-		t_max_z = tmp
-	}
-	hit_distance := 0.
-	normal: Vec3
-	if t_min_x > t_max_y || t_min_y > t_max_x {
+	when true {
+		s0 := start - object.position
+		q0 := linalg.quaternion_inverse(object.rotation)
+		s0 = linalg.quaternion256_mul_vector3(q0, s0)
+		dir := linalg.quaternion256_mul_vector3(q0, direction)
+		dir_x := 0.0000001 if (dir.x == 0) else dir.x
+		dir_y := 0.0000001 if (dir.y == 0) else dir.y
+		dir_z := 0.0000001 if (dir.z == 0) else dir.z
+		inv_dir_x := 1 / dir_x
+		inv_dir_y := 1 / dir_y
+		inv_dir_z := 1 / dir_z
+		x_min := -object.length / 2
+		x_max := object.length / 2
+		y_min := -object.width / 2
+		y_max := object.width / 2
+		z_min := -object.height / 2
+		z_max := object.height / 2
+		t_min_x := (x_min - s0.x) * inv_dir_x
+		t_max_x := (x_max - s0.x) * inv_dir_x
+		if (inv_dir_x < 0) {
+			tmp := t_min_x
+			t_min_x = t_max_x
+			t_max_x = tmp
+		}
+		t_min_y := (y_min - s0.y) * inv_dir_y
+		t_max_y := (y_max - s0.y) * inv_dir_y
+		if (inv_dir_y < 0) {
+			tmp := t_min_y
+			t_min_y = t_max_y
+			t_max_y = tmp
+		}
+		t_min_z := (z_min - s0.z) * inv_dir_z
+		t_max_z := (z_max - s0.z) * inv_dir_z
+		if (inv_dir_z < 0) {
+			tmp := t_min_z
+			t_min_z = t_max_z
+			t_max_z = tmp
+		}
+		hit_distance := 0.
+		normal: Vec3
+		if t_min_x > t_max_y || t_min_y > t_max_x {
+			return
+		}
+		if t_min_y > t_max_z || t_min_z > t_max_y {
+			return
+		}
+		if t_min_z > t_max_x || t_min_x > t_max_z {
+			return
+		}
+		tmin := max(t_min_x, t_min_y, t_min_z)
+		tmax := min(t_max_x, t_max_y, t_max_z)
+		if tmax < 0 {
+			return
+		}
+		hit_distance = 0 if tmin < 0 else tmin
+		hit_poi64_act := start + direction * hit_distance
+		hit_poi64 := s0 + dir * hit_distance
+		epsilon := 0.01
+		h_normal: Vec3
+		if (abs(hit_poi64.x - x_min) < epsilon) {
+			h_normal = {-1, 0, 0}
+		} else if (abs(hit_poi64.x - x_max) < epsilon) {
+			h_normal = {1, 0, 0}
+		} else if (abs(hit_poi64.y - y_min) < epsilon) {
+			h_normal = {0, -1, 0}
+		} else if (abs(hit_poi64.y - y_max) < epsilon) {
+			h_normal = {0, 1, 0}
+		} else if (abs(hit_poi64.z - z_min) < epsilon) {
+			h_normal = {0, 0, -1}
+		} else if (abs(hit_poi64.z - z_max) < epsilon) {
+			h_normal = {0, 0, 1}
+		}
+		if hit_distance > distance {
+			return
+		}
+		hit = true
+		hit_location = hit_poi64_act
+		hit_normal = linalg.quaternion256_mul_vector3(object.rotation, h_normal)
+		return
+	} else {
+		s0 := start - object.position
+		q0 := linalg.quaternion_inverse(object.rotation)
+		s0 = linalg.quaternion256_mul_vector3(q0, s0)
+		dir := linalg.quaternion256_mul_vector3(q0, direction)
+		startv := cast([3]f32)s0
+		dirv := cast([3]f32)dir
+		bb := raylib.BoundingBox{}
+		w := cast(f32)(object.width / 2)
+		h := cast(f32)(object.height / 2)
+		l := cast(f32)(object.length / 2)
+		bb.min = {-l, -w, -h}
+		bb.max = {l, w, h}
+		rs := raylib.GetRayCollisionBox({startv, dirv}, bb)
+		if !rs.hit || cast(f64)rs.distance >= distance {
+			return
+		}
+		hit = rs.hit
+		hit_location = start + dir * cast(f64)rs.distance
+		hit_normal = linalg.quaternion256_mul_vector3(object.rotation, cast([3]f64)rs.normal)
 		return
 	}
-	if t_min_y > t_max_z || t_min_z > t_max_y {
-		return
-	}
-	if t_min_z > t_max_x || t_min_x > t_max_z {
-		return
-	}
-	tmin := max(t_min_x, t_min_y, t_min_z)
-	tmax := min(t_max_x, t_max_y, t_max_z)
-	if tmax < 0 {
-		return
-	}
-	hit_distance = 0 if tmin < 0 else tmin
-	hit_poi64_act := start + direction * hit_distance
-	hit_poi64 := s0 + dir * hit_distance
-	epsilon := 0.01
-	h_normal: Vec3
-	if (abs(hit_poi64.x - x_min) < epsilon) {
-		h_normal = {-1, 0, 0}
-	} else if (abs(hit_poi64.x - x_max) < epsilon) {
-		h_normal = {1, 0, 0}
-	} else if (abs(hit_poi64.y - y_min) < epsilon) {
-		h_normal = {0, -1, 0}
-	} else if (abs(hit_poi64.y - y_max) < epsilon) {
-		h_normal = {0, 1, 0}
-	} else if (abs(hit_poi64.z - z_min) < epsilon) {
-		h_normal = {0, 0, -1}
-	} else if (abs(hit_poi64.z - z_max) < epsilon) {
-		h_normal = {0, 0, 1}
-	}
-	hit = true
-	hit_location = hit_poi64_act
-	hit_normal = linalg.quaternion256_mul_vector3(object.rotation, h_normal)
-	return
 }
 
 generate_collision_data :: proc(
@@ -380,6 +409,79 @@ generate_collision_data :: proc(
 	return data
 }
 
+check_collision_projectile :: proc(
+	obj: TaggedPhysicsObject,
+	start_pos: Vec3,
+	end_pos: Vec3,
+	set: ^CollisionData,
+) -> (
+	hit_ref: EntityRef,
+	hit_obj: ^PhysicsObject,
+	hit_norm: Vec3,
+	safe_dist: f64,
+	did_hit: bool,
+) {
+	min_x_f := (start_pos.x / set.tile_map.tile_sz_x)
+	min_y_f := (start_pos.y / set.tile_map.tile_sz_y)
+	min_z_f := (start_pos.z / set.tile_map.tile_sz_z)
+	max_x_f := (end_pos.x / set.tile_map.tile_sz_x)
+	max_y_f := (end_pos.y / set.tile_map.tile_sz_y)
+	max_z_f := (end_pos.z / set.tile_map.tile_sz_z)
+	if min_x_f > max_x_f {
+		tmp := min_x_f
+		min_x_f = max_x_f
+		max_x_f = tmp
+	}
+	if min_y_f > max_y_f {
+		tmp := min_y_f
+		min_y_f = max_y_f
+		max_y_f = tmp
+	}
+	if min_z_f > max_z_f {
+		tmp := min_z_f
+		min_z_f = max_z_f
+		max_z_f = tmp
+	}
+	x0 := cast(i64)math.floor(min_x_f) - 1
+	y0 := cast(i64)math.floor(min_y_f) - 1
+	z0 := cast(i64)math.floor(min_z_f) - 1
+	x1 := cast(i64)math.ceil(max_x_f) + 1
+	y1 := cast(i64)math.ceil(max_y_f) + 1
+	z1 := cast(i64)math.ceil(max_z_f) + 1
+	dir := linalg.normalize(end_pos - start_pos)
+	lgt := linalg.distance(start_pos, end_pos)
+	safe_dist = lgt
+	rad := get_object_radius(obj.ptr^)
+	min_dist := 0.0
+	for dz in z0 ..= z1 {
+		for dy in y0 ..= y1 {
+			for dx in x0 ..= x1 {
+				ps_act := Tile{dx, dy, dz}
+				if !(ps_act in set.tile_map.tiles) {
+					continue
+				}
+				list := set.tile_map.tiles[ps_act]
+				for i in list {
+					if i.ref == obj.ref {
+						continue
+					}
+					hit, hit_loc, n := raycast_against_object(start_pos, dir, lgt, i.ptr^)
+					dist := linalg.distance(hit_loc, start_pos)
+					if hit && (!did_hit || dist < min_dist) {
+						min_dist = dist
+						did_hit = true
+						hit_norm = n
+						hit_ref = i.ref
+						hit_obj = i.ptr
+						safe_dist = dist - rad if dist - rad >= 0 else 0.
+					}
+				}
+			}
+		}
+	}
+	return
+}
+
 physics_update :: proc(
 	objects: []TaggedPhysicsObject,
 	delta_time: f64,
@@ -393,7 +495,6 @@ physics_update :: proc(
 	events := make([dynamic]CollisionEvent, frame_allocator)
 	hit_set := make(map[CollisionPair]u8)
 	defer delete(hit_set)
-
 	for i in objects {
 		id := i.ref
 		phys := i.ptr
@@ -409,72 +510,101 @@ physics_update :: proc(
 		if (phys.velocity == Vec3{0, 0, 0}) {
 			continue
 		}
-		base_pos := phys.position
-		old_pos := phys.position
-		max_disp := linalg.length(phys.velocity * delta_time)
-		DELTA :: 1.
-		disp: f64 = 0.00
-		nvel := phys.velocity / (linalg.length(phys.velocity))
-		for disp < max_disp {
-			old_pos = phys.position
-			if (disp + DELTA) > max_disp {
-				disp = max_disp
+		if i.ptr.is_projectile {
+			base_pos := phys.position
+			end_pos := phys.velocity * delta_time + base_pos
+			hit_ref, hit_obj, hit_norm, safe_dist, did_hit := check_collision_projectile(
+				i,
+				base_pos,
+				end_pos,
+				&data,
+			)
+			if !did_hit {
+				i.ptr.position = end_pos
 			} else {
-				disp = disp + DELTA
-			}
-			phys.position = base_pos + disp * nvel
-			hit_ref, hit_obj, hit_norm, max_depth, did_hit := check_collision_against(i, data)
-			if did_hit {
-				phys.rotation = old_rot
-				phys.position = old_pos
-				phys.angular_velocity *= -0.5
+				dir := linalg.normalize(phys.velocity)
+				phys.position = base_pos + dir * safe_dist
+				vel := phys.velocity
+				phys.velocity = {0, 0, 0}
 				p := CollisionPair{i.ref, hit_ref}
 				if !(p in hit_set) {
 					hit_set[p] = 0
 					p2 := CollisionPair{hit_ref, i.ref}
 					hit_set[p2] = 0
-					e1 := CollisionEvent {
-						i.ref,
-						hit_ref,
-						hit_norm,
-						hit_obj.velocity - phys.velocity,
-					}
-					e2 := CollisionEvent {
-						hit_ref,
-						i.ref,
-						-hit_norm,
-						phys.velocity - hit_obj.velocity,
-					}
+					e1 := CollisionEvent{i.ref, hit_ref, hit_norm, hit_obj.velocity - vel}
+					e2 := CollisionEvent{hit_ref, i.ref, -hit_norm, vel - hit_obj.velocity}
 					append(&events, e1)
 					append(&events, e2)
-					switch phys.collision_response {
-					case .Elastic:
-						phys.velocity = linalg.reflect(phys.velocity, e1.normal)
-					case .Plastic:
-						phys.velocity = linalg.reflect(phys.velocity, e1.normal) * 0.8
-						if linalg.length(phys.velocity) < 0.01 {
-							phys.velocity = {0, 0, 0}
-						}
-					case .Halt:
-						phys.velocity = {0, 0, 0}
-					case .Slide:
-						phys.velocity -= linalg.dot(phys.velocity, e1.normal) * e1.normal
-					}
-					switch hit_obj.collision_response {
-					case .Elastic:
-						hit_obj.velocity = linalg.reflect(hit_obj.velocity, e2.normal)
-					case .Plastic:
-						hit_obj.velocity = linalg.reflect(hit_obj.velocity, e2.normal) * 0.8
-						if linalg.length(hit_obj.velocity) < 0.01 {
-							hit_obj.velocity = {0, 0, 0}
-						}
-					case .Halt:
-						hit_obj.velocity = {0, 0, 0}
-					case .Slide:
-						hit_obj.velocity -= linalg.dot(hit_obj.velocity, e2.normal) * e2.normal
-					}
 				}
-				break
+			}
+		} else {
+			base_pos := phys.position
+			old_pos := phys.position
+			max_disp := linalg.length(phys.velocity * delta_time)
+			DELTA :: 0.01
+			disp: f64 = 0.00
+			nvel := phys.velocity / (linalg.length(phys.velocity))
+			for disp < max_disp {
+				old_pos = phys.position
+				if (disp + DELTA) > max_disp {
+					disp = max_disp
+				} else {
+					disp = disp + DELTA
+				}
+				phys.position = base_pos + disp * nvel
+				hit_ref, hit_obj, hit_norm, max_depth, did_hit := check_collision_against(i, data)
+				if did_hit {
+					phys.rotation = old_rot
+					phys.position = old_pos
+					phys.angular_velocity *= -0.5
+					p := CollisionPair{i.ref, hit_ref}
+					if !(p in hit_set) {
+						hit_set[p] = 0
+						p2 := CollisionPair{hit_ref, i.ref}
+						hit_set[p2] = 0
+						e1 := CollisionEvent {
+							i.ref,
+							hit_ref,
+							hit_norm,
+							hit_obj.velocity - phys.velocity,
+						}
+						e2 := CollisionEvent {
+							hit_ref,
+							i.ref,
+							-hit_norm,
+							phys.velocity - hit_obj.velocity,
+						}
+						append(&events, e1)
+						append(&events, e2)
+						switch phys.collision_response {
+						case .Elastic:
+							phys.velocity = linalg.reflect(phys.velocity, e1.normal)
+						case .Plastic:
+							phys.velocity = linalg.reflect(phys.velocity, e1.normal) * 0.8
+							if linalg.length(phys.velocity) < 0.01 {
+								phys.velocity = {0, 0, 0}
+							}
+						case .Halt:
+							phys.velocity = {0, 0, 0}
+						case .Slide:
+							phys.velocity -= linalg.dot(phys.velocity, e1.normal) * e1.normal
+						}
+						switch hit_obj.collision_response {
+						case .Elastic:
+							hit_obj.velocity = linalg.reflect(hit_obj.velocity, e2.normal)
+						case .Plastic:
+							hit_obj.velocity = linalg.reflect(hit_obj.velocity, e2.normal) * 0.8
+							if linalg.length(hit_obj.velocity) < 0.01 {
+								hit_obj.velocity = {0, 0, 0}
+							}
+						case .Halt:
+							hit_obj.velocity = {0, 0, 0}
+						case .Slide:
+							hit_obj.velocity -= linalg.dot(hit_obj.velocity, e2.normal) * e2.normal
+						}
+					}
+					break
+				}
 			}
 		}
 	}

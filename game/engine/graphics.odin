@@ -508,6 +508,7 @@ create_command_buffer :: proc() -> ^GraphicsCommandBuffer {
 create_graphics_context :: proc() -> ^GraphicsContext {
 	raylib.InitWindow(1000, 1000, "hello window!")
 	raylib.SetTargetFPS(61)
+	raylib.DisableCursor()
 	out := new(GraphicsContext)
 	out.meshes = make(map[string]raylib.Model)
 	out.textures = make(map[string]raylib.Texture)
