@@ -1,18 +1,13 @@
-package game
+package engine
 import "core:container/queue"
 import "core:fmt"
 import "core:math/linalg"
 import "core:mem"
 import "core:strings"
 import "core:sync"
-import "engine"
+
 import "vendor:raylib"
 
-Vec3 :: engine.Vec3
-Quat :: engine.Quat
-EntityRef :: engine.EntityRef
-Transform :: engine.Transform
-PhysicsObject :: engine.PhysicsObject
 
 MAX_ENTITY_COUNT :: 16384
 ENTITY_POOL_SIZE :: 4096

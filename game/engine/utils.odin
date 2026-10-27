@@ -88,7 +88,7 @@ pool_alloc :: proc(pool: ^Pool($T, $size)) -> ^T {
 	for i in 0 ..< size {
 		if !pool.table[i] {
 			pool.table[i] = true
-			mem.set(&pool.pool[i], 0, sizeof(pool.pool[i]))
+			mem.set(&pool.pool[i], 0, size_of(pool.pool[i]))
 			return &pool.pool[i]
 		}
 	}
@@ -102,12 +102,11 @@ pool_free :: proc(pool: ^Pool($T, $size), ptr: ^T) {
 	start := cast(uintptr)&pool.pool[0]
 	end := cast(uintptr)&pool.pool[size - 1]
 	if start <= pt && pt < end {
-		i := (pt - start) / sizeof(T)
+		i := (pt - start) / size_of(T)
 		pool.table[i] = false
 		assert(&pool.pool[i] == ptr)
-		mem.set(&pool.pool[i], 0, sizeof(T))
+		mem.set(&pool.pool[i], 0, size_of(T))
 	} else {
 		panic("attempted to free a non allocated pointer")
 	}
-	return nil
 }
