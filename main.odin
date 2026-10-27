@@ -20,14 +20,13 @@ main :: proc() {
 }
 
 game_main :: proc() {
-	pool: engine.Pool(int, 10)
-	s := make([dynamic]^int)
-	defer delete(s)
-	for i in 0 ..< 5 {
-		tmp := engine.pool_alloc(&pool)
-		append(&s, tmp)
+	engine.init(false)
+	defer engine.fini()
+	TEntity :: struct {
+		using _parent: engine.Entity,
+		data:          i32,
 	}
-	fmt.printf("%v\n", pool)
-	engine.pool_free(&pool, s[3])
-	fmt.printf("%v\n", pool)
+	T3 :: struct {}
+	tmp, ptr := engine.create_entity(TEntity)
+	tmp2, ptr2 := engine.create_entity(engine.Entity)
 }
