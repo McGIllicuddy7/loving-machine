@@ -75,3 +75,39 @@ fini :: proc() {
 	}
 	delete(ENGINE.logs.values)
 }
+
+Pool :: struct($T: typeid, $size: int) {
+	lock:  sync.Mutex,
+	pool:  [size]T,
+	table: [size]bool,
+}
+
+pool_alloc :: proc(pool: ^Pool($T, $size)) -> ^T {
+	sync.lock(&pool.lock)
+	defer sync.unlock(&pool.lock)
+	for i in 0 ..< size {
+		if !pool.table[i] {
+			pool.table[i] = true
+			mem.set(&pool.pool[i], 0, sizeof(pool.pool[i]))
+			return &pool.pool[i]
+		}
+	}
+	return nil
+}
+
+pool_free :: proc(pool: ^Pool($T, $size), ptr: ^T) {
+	sync.lock(&pool.lock)
+	defer sync.unlock(&pool.lock)
+	pt := cast(uintptr)ptr
+	start := cast(uintptr)&pool.pool[0]
+	end := cast(uintptr)&pool.pool[size - 1]
+	if start <= pt && pt < end {
+		i := (pt - start) / sizeof(T)
+		pool.table[i] = false
+		assert(&pool.pool[i] == ptr)
+		mem.set(&pool.pool[i], 0, sizeof(T))
+	} else {
+		panic("attempted to free a non allocated pointer")
+	}
+	return nil
+}

@@ -20,24 +20,4 @@ main :: proc() {
 }
 
 game_main :: proc() {
-	fmt.printf("size of entity:%d, sizeof level:%d\n", size_of(game.Entity), size_of(game.Level))
-	game.game_init()
-	defer game.game_fini()
-	register_systems_and_hooks()
-	startup_logic()
-	game.game_loop()
-}
-
-register_systems_and_hooks :: proc() {
-	game.register_system("input", ecs.input_system)
-	game.register_event_hook("event hook", ecs.event_handler)
-}
-
-startup_logic :: proc() {
-	for _i in 0 ..< 100 {
-		spawn_asteroid(
-			{rand.float64() * 2 - 1, rand.float64() * 2 - 1, rand.float64() * 2 - 1} * 10.,
-		)
-	}
-	spawn_base_ship({-20, 0, 0}, {1, 0, 0}, true)
 }
