@@ -23,16 +23,24 @@ Logs :: struct {
 MAX_ENTITY_COUNT :: 16384
 POOLED_CHEAP_ENTITY_COUNT :: 16384
 
-Event :: union {
+EventData :: union {
 	CollisionEvent,
+}
+Event :: struct {
+	target: EntityRef,
+	data:   EventData,
 }
 
 EntityTag :: enum {}
 
 EntityMesh :: struct {
-	name:   string,
-	color:  raylib.Color,
-	offset: Transform,
+	name:                  string,
+	color:                 raylib.Color,
+	offset:                Transform,
+	use_custom_dimensions: bool,
+	length:                f64,
+	width:                 f64,
+	height:                f64,
 }
 
 OnUpdateType :: #type proc(this: ^Entity, delta_time: f32)
@@ -88,9 +96,11 @@ EntityManager :: struct {
 }
 
 World :: struct {
-	entities:   EntityManager,
-	event_lock: sync.Mutex,
-	events:     queue.Queue(Event),
+	camera:                raylib.Camera3D,
+	camera_set_this_frame: bool,
+	entities:              EntityManager,
+	event_lock:            sync.Mutex,
+	events:                queue.Queue(Event),
 }
 
 _get_entity_manager :: proc() -> ^EntityManager {
@@ -136,6 +146,12 @@ setup_world :: proc() {
 	{
 		world := _get_world()
 		queue.init(&world.events)
+		world.camera_set_this_frame = false
+		world.camera.fovy = 90.
+		world.camera.position = {}
+		world.camera.target = {1, 0, 0}
+		world.camera.up = {0, 0, 1}
+		world.camera.projection = .PERSPECTIVE
 	}
 }
 
@@ -245,7 +261,7 @@ string_free :: proc(s: string) {
 
 
 destroy_event :: proc(ev: Event) {
-	switch v in ev {
+	switch v in ev.data {
 	case CollisionEvent:
 	case:
 	}
@@ -369,7 +385,7 @@ get_entity :: proc(et: EntityRef) -> ^Entity {
 }
 
 get_all_entities :: proc() -> []^Entity {
-	return _get_entity_manager().entities[:]
+	return _get_entity_manager().entity_list[:]
 }
 
 _get_all_physics_objects :: proc() -> []TaggedPhysicsObject {
@@ -385,23 +401,87 @@ broadcast_event :: proc(ev: Event) {
 
 game_tick :: proc() {
 	engine := &ENGINE
+	world := _get_world()
+	world.camera_set_this_frame = false
+	mem.dynamic_arena_free_all(&engine.frame_arena)
 	manager := _get_entity_manager()
 	delta_time := cast(f32)(1. / 60.)
 	if engine.graphics_context != nil {
 		delta_time = raylib.GetFrameTime()
 	}
 	clear(&manager.entity_list)
-	for i in manager.entities {
+	idx := 0
+	for &i in manager.entities {
 		if i != nil {
+			idx += 1
 			append(&manager.entity_list, i)
 		}
 	}
+	entity_list := get_all_entities()
 	{
-		list := get_all_entities()
 		clear(&manager.physics_object_list)
-		for i in list {
+		for i in entity_list {
+			assert(i != nil)
 			append(&manager.physics_object_list, TaggedPhysicsObject{i.self_ref, &i.phys})
 		}
 		events := physics_update(_get_all_physics_objects(), cast(f64)delta_time, frame_alloc())
+		world := _get_world()
+		sync.lock(&world.event_lock)
+		defer sync.unlock(&world.event_lock)
+		for i in events {
+			queue.push_back(&world.events, Event{i.collided_with_entity, i})
+		}
 	}
+	{
+
+		for i in entity_list {
+			if i.on_update != nil {
+				i->on_update(delta_time)
+			}
+		}
+	}
+	if ENGINE.graphics_context != nil {
+		for i in entity_list {
+			if i.on_render != nil {
+				i->on_render()
+			}
+		}
+		if !world.camera_set_this_frame {
+			raylib.UpdateCamera(&world.camera, .FREE)
+		}
+		set_camera(world.camera)
+		for i in entity_list {
+			if i.mesh.name != "" {
+				trs := i.mesh.offset
+				if trs.rotation == Quat(0) {
+					trs.rotation = Quat(1)
+				}
+				trs.rotation = i.phys.rotation * trs.rotation
+				trs.position = linalg.quaternion256_mul_vector3(trs.rotation, trs.position)
+				trs.position += i.phys.position
+				dims := Vec3{i.phys.length, i.phys.width, i.phys.height}
+				if i.mesh.use_custom_dimensions {
+					dims = {i.mesh.length, i.mesh.width, i.mesh.height}
+				}
+				bind_model(i.mesh.name, trs, dims, i.mesh.color)
+			}
+		}
+		graphics_step()
+	}
+	{
+
+		for {
+			ev: Event
+			{
+				world := _get_world()
+				sync.mutex_lock(&world.event_lock)
+				defer sync.mutex_unlock(&world.event_lock)
+				if queue.len(world.events) == 0 {
+					break
+				}
+				ev = queue.pop_front(&world.events)
+			}
+		}
+	}
+	frame_destroy_entities()
 }

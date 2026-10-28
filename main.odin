@@ -20,13 +20,19 @@ main :: proc() {
 }
 
 game_main :: proc() {
-	engine.init(false)
+	engine.init()
 	defer engine.fini()
-	TEntity :: struct {
-		using _parent: engine.Entity,
-		data:          i32,
+	fmt.printf("MAPS:%d\n", raylib.MAX_MATERIAL_MAPS)
+	for i in 0 ..< 100 {
+		_, tmp := engine.create_entity(engine.Entity)
+		tmp.phys.position = {cast(f64)(i % 10), cast(f64)(i / 10), 0} * 2
+		tmp.phys.rotation = Quat(1)
+		tmp.phys.height = 1.
+		tmp.phys.width = 1.
+		tmp.phys.length = 1.
+		tmp.mesh.name = engine.string_clone("cube")
 	}
-	T3 :: struct {}
-	tmp, ptr := engine.create_entity(TEntity)
-	tmp2, ptr2 := engine.create_entity(engine.Entity)
+	for !raylib.WindowShouldClose() {
+		engine.game_tick()
+	}
 }

@@ -6,12 +6,17 @@ import "core:mem"
 import "core:strings"
 import "core:sync"
 import "vendor:raylib"
+import "vendor:raylib/rlgl"
 
 GraphicsObject :: struct {
-	transform: Transform,
-	scale:     Vec3,
-	mesh_id:   string,
-	tint:      raylib.Color,
+	transform:      Transform,
+	scale:          Vec3,
+	mesh_id:        string,
+	mesh_diffuse:   string,
+	mesh_normal:    string,
+	mesh_roughness: f32,
+	mesh_metallic:  f32,
+	tint:           raylib.Color,
 }
 
 @(private = "file")
@@ -115,8 +120,13 @@ GraphicsCommandBuffer :: struct {
 GraphicsContext :: struct {
 	meshes:               map[string]raylib.Model,
 	textures:             map[string]raylib.Texture2D,
+	light_depth_buffer:   raylib.RenderTexture2D,
+	depth_buffer:         raylib.RenderTexture2D,
+	base_diffuse_map:     raylib.RenderTexture2D,
+	base_normal_map:      raylib.RenderTexture2D,
 	font:                 raylib.Font,
 	shader:               raylib.Shader,
+	material:             raylib.Material,
 	swap_lock:            sync.Mutex,
 	write_command_buffer: ^GraphicsCommandBuffer,
 	read_command_buffer:  ^GraphicsCommandBuffer,
@@ -306,11 +316,24 @@ ensure_texture_loaded :: proc(name: string) {
 	command_buffer_write_cmd(cmd)
 }
 
-bind_model :: proc(mesh_id: string, transform: Transform, scale: Vec3, tint: raylib.Color) {
+bind_model :: proc(
+	mesh_id: string,
+	transform: Transform,
+	scale: Vec3,
+	tint: raylib.Color,
+	diffuse: string = "",
+	normal: string = "",
+	roughness: f32 = 1.,
+	metallic: f32 = 0.,
+) {
 	command_buffer_write_lock()
 	defer command_buffer_write_unlock()
 	object := GraphicsObject{}
 	object.mesh_id = strings.clone(mesh_id, write_buffer_alloc())
+	object.mesh_diffuse = strings.clone(diffuse, write_buffer_alloc())
+	object.mesh_normal = strings.clone(normal, write_buffer_alloc())
+	object.mesh_roughness = roughness
+	object.mesh_metallic = metallic
 	object.transform = transform
 	object.scale = scale
 	object.tint = tint
@@ -359,30 +382,41 @@ graphics_step :: proc() {
 		assert(dir_loc != -1)
 		tmp := linalg.normalize(raylib.Vector3{2, 0, 1})
 		raylib.SetShaderValue(this.shader, dir_loc, &tmp, .VEC3)
-	}
-	//	raylib.BeginShaderMode(this.shader)
-	for i in this.read_command_buffer.objects {
-		if !(i.mesh_id in this.meshes) {
-			continue
+		rough_loc := raylib.GetShaderLocation(this.shader, "roughness")
+		metal_loc := raylib.GetShaderLocation(this.shader, "metallic")
+		for &i in this.read_command_buffer.objects {
+			if !(i.mesh_id in this.meshes) {
+				continue
+			}
+			pos := cast(raylib.Vector3)i.transform.position
+			scale := cast(raylib.Vector3)i.scale
+			base_rot := i.transform.rotation
+			pi :: math.PI
+			if i.mesh_id == "cylinder" {
+				base_rot =
+					base_rot * linalg.quaternion_from_euler_angles_f64(0., 00., pi / 2, .XYZ)
+			}
+			msh := &this.meshes[i.mesh_id]
+			trans := raylib.MatrixCompose(pos, cast(raylib.Quaternion)base_rot, scale)
+			if i.mesh_diffuse != "" {
+				this.material.maps[0].texture = this.textures[i.mesh_diffuse]
+			} else {
+				this.material.maps[0].texture = this.base_diffuse_map.texture
+			}
+			if i.mesh_normal != "" {
+				this.material.maps[1].texture = this.textures[i.mesh_normal]
+			} else {
+				this.material.maps[1].texture = this.base_normal_map.texture
+			}
+			this.material.maps[2].texture = this.light_depth_buffer.texture
+			raylib.SetShaderValue(this.shader, rough_loc, &i.mesh_roughness, .FLOAT)
+			raylib.SetShaderValue(this.shader, metal_loc, &i.mesh_metallic, .FLOAT)
+			for j in 0 ..< msh.meshCount {
+				cur := msh.meshes[j]
+				raylib.DrawMesh(cur, this.material, trans)
+			}
 		}
-		angle, rot_axis := linalg.angle_axis_from_quaternion_f64(i.transform.rotation)
-		pos := cast(raylib.Vector3)i.transform.position
-		scale := cast(raylib.Vector3)i.scale
-		msh := &this.meshes[i.mesh_id]
-		old_shade := msh.materials[0].shader
-		msh.materials[0].shader = this.shader
-		base_rot := Quat(1)
-		pi :: math.PI
-		if i.mesh_id == "cylinder" || true {
-			base_rot = linalg.quaternion_from_euler_angles_f64(0., 00., pi / 2, .XYZ)
-		}
-		msh.transform =
-			raylib.MatrixCompose(pos, cast(quaternion128)i.transform.rotation, scale) *
-			raylib.MatrixCompose({}, cast(quaternion128)base_rot, {1, 1, 1})
-		raylib.DrawModel(msh^, {}, 1., i.tint)
-		msh.materials[0].shader = old_shade
 	}
-	//	raylib.EndShaderMode()
 	raylib.EndMode3D()
 	for layer in 0 ..= max_layer_idx {
 		for i in this.read_command_buffer.commands {
@@ -508,6 +542,10 @@ create_command_buffer :: proc() -> ^GraphicsCommandBuffer {
 create_graphics_context :: proc() -> ^GraphicsContext {
 	raylib.InitWindow(1000, 1000, "hello window!")
 	raylib.SetTargetFPS(61)
+	{
+		raylib.BeginDrawing()
+		raylib.EndDrawing()
+	}
 	raylib.DisableCursor()
 	out := new(GraphicsContext)
 	out.meshes = make(map[string]raylib.Model)
@@ -530,9 +568,33 @@ create_graphics_context :: proc() -> ^GraphicsContext {
 		out.meshes[strings.clone("torus")] = torus_model
 	}
 	out.shader = raylib.LoadShader("main.vert", "main.frag")
+	out.material = raylib.LoadMaterialDefault()
+	out.material.shader = out.shader
 	out.font = raylib.LoadFont("Ac437_IBM_VGA_9x16.ttf")
 	out.write_command_buffer = create_command_buffer()
 	out.read_command_buffer = create_command_buffer()
+	out.depth_buffer = raylib.LoadRenderTexture(1000, 1000)
+
+	{
+		out.base_diffuse_map = raylib.LoadRenderTexture(256, 256)
+		raylib.BeginTextureMode(out.base_diffuse_map)
+		raylib.ClearBackground(raylib.RED)
+		raylib.EndTextureMode()
+	}
+	{
+		out.base_normal_map = raylib.LoadRenderTexture(256, 25)
+		raylib.BeginTextureMode(out.base_normal_map)
+		raylib.ClearBackground(raylib.GREEN)
+		raylib.EndTextureMode()
+	}
+	{
+		out.light_depth_buffer = raylib.LoadRenderTexture(1000, 1000)
+		raylib.BeginTextureMode(out.light_depth_buffer)
+		raylib.ClearBackground(raylib.YELLOW)
+		raylib.EndTextureMode()
+	}
+
+
 	return out
 }
 
