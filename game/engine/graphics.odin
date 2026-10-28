@@ -4,6 +4,7 @@ import "core:math"
 import "core:math/linalg"
 import "core:math/rand"
 import "core:mem"
+import "core:slice"
 import "core:strings"
 import "core:sync"
 import "vendor:raylib"
@@ -110,12 +111,40 @@ GraphicsCommand :: struct {
 	command: EGraphicsCommand,
 }
 
+
+Particle :: struct {
+	position:           raylib.Vector3,
+	scale:              raylib.Vector3,
+	velocity:           raylib.Vector3,
+	angular_velocity:   raylib.Vector3,
+	rotation:           raylib.Quaternion,
+	tint:               raylib.Color,
+	remaining_lifetime: f64,
+}
+
+DrawingMode :: enum {
+	Multiply,
+	Addititve,
+	Subtractive,
+	Alpha,
+}
+
+GraphicsParticleSystem :: struct {
+	billboards: bool,
+	mesh_name:  string,
+	texture:    string,
+	mode:       DrawingMode,
+	drag:       f32,
+	particles:  #soa[]Particle,
+}
+
 GraphicsCommandBuffer :: struct {
 	lock:            sync.Mutex,
 	camera:          raylib.Camera3D,
 	light_direction: raylib.Vector3,
 	objects:         [dynamic]GraphicsObject,
 	commands:        [dynamic]GraphicsCommand,
+	particles:       [dynamic]GraphicsParticleSystem,
 	arena:           mem.Dynamic_Arena,
 }
 
@@ -147,7 +176,7 @@ GraphicsContext :: struct {
 	shader:               raylib.Shader,
 	material:             raylib.Material,
 	particle_material:    raylib.Material,
-	particle_shader:      raylib.Material,
+	particle_shader:      raylib.Shader,
 	base_mat:             raylib.Material,
 	swap_lock:            sync.Mutex,
 	write_command_buffer: ^GraphicsCommandBuffer,
@@ -363,6 +392,36 @@ bind_model :: proc(
 	command_buffer_write_object(object)
 }
 
+destroy_particle_system :: proc(system: GraphicsParticleSystem, allocator := context.allocator) {
+	delete(system.mesh_name)
+	delete(system.texture)
+	delete(system.particles)
+}
+
+bind_particle_system :: proc(system: GraphicsParticleSystem) {
+	command_buffer_write_lock()
+	defer command_buffer_write_unlock()
+	assert(len(system.particles) <= 1000)
+	system_clone := system
+	system_clone.mesh_name = strings.clone(system_clone.mesh_name, write_buffer_alloc())
+	system_clone.texture = strings.clone(system_clone.texture, write_buffer_alloc())
+	count := 0
+	for i in system.particles {
+		if i.remaining_lifetime >= 0.0 {
+			count += 1
+		}
+	}
+	system_clone.particles = make_soa_slice(#soa[]Particle, count, write_buffer_alloc())
+	idx := 0
+	for i in system.particles {
+		if i.remaining_lifetime >= 0.0 {
+			system_clone.particles[idx] = i
+			idx += 1
+		}
+	}
+	append(&get_graphics_context().write_command_buffer.particles, system_clone)
+}
+
 set_camera :: proc(camera: raylib.Camera3D) {
 	command_buffer_write_lock()
 	defer command_buffer_write_unlock()
@@ -403,18 +462,24 @@ draw_graphics_objects :: proc(
 	diffuse_col_loc := raylib.GetShaderLocation(this.shader, "colDiffuse")
 	raylib.BeginMode3D(camera)
 	rlgl.SetClipPlanes(0.01, 1000.)
-	if !depth_pass {
-
+	if !depth_pass && this.sky_box.star_count > 0 {
 		rlgl.DisableDepthMask()
 		//	rlgl.DisableDepthTest()
 		trans := make_slice([]raylib.Matrix, MAX_STAR_COUNT)
 		defer delete(trans)
+		cols := make_slice([][4]f32, MAX_STAR_COUNT)
+		defer delete(cols)
 		for i in 0 ..< this.sky_box.star_count {
+			cols[i] = cast([4]f32)this.sky_box.star_color / 255.
 			trans[i] = raylib.MatrixCompose(
 				this.sky_box.star_poses[i] + camera.position,
 				this.sky_box.star_rotations[i],
 				this.sky_box.star_rads[i],
 			)
+		}
+		{
+			loc := raylib.GetShaderLocation(this.particle_shader, "colors")
+			raylib.SetShaderValueV(this.particle_shader, loc, &cols[0], .VEC4, cast(i32)len(cols))
 		}
 		raylib.DrawMeshInstanced(
 			this.meshes["star"].meshes[0],
@@ -474,6 +539,74 @@ draw_graphics_objects :: proc(
 				raylib.DrawMesh(cur, this.material, trans)
 			}
 
+		}
+	}
+	if !depth_pass {
+		color_loc := raylib.GetShaderLocation(this.particle_shader, "colors")
+		for &i in this.read_command_buffer.particles {
+			if len(i.particles) == 0 {
+				continue
+			}
+			if i.mode == .Addititve {
+				rlgl.SetBlendMode(cast(i32)rlgl.BlendMode.ADDITIVE)
+			} else if i.mode == .Multiply {
+				rlgl.SetBlendMode(cast(i32)rlgl.BlendMode.MULTIPLIED)
+			} else if i.mode == .Alpha {
+				rlgl.SetBlendMode(cast(i32)rlgl.BlendMode.ALPHA_PREMULTIPLY)
+			} else if i.mode == .Subtractive {
+				rlgl.SetBlendMode(cast(i32)rlgl.BlendMode.SUBTRACT_COLORS)
+			}
+			trans := make_slice([]raylib.Matrix, len(i.particles))
+			defer delete(trans)
+			cols := make_slice([][4]f32, len(i.particles))
+			defer delete(cols)
+			for j, idx in i.particles {
+				cols[idx] = cast([4]f32)j.tint / 255.
+				rot: quaternion128 = quaternion128(1)
+				if i.billboards {
+					base_rot := linalg.matrix3_from_quaternion(
+						linalg.quaternion_from_euler_angle_x_f32(-math.PI / 2),
+					)
+					cam_rot := linalg.matrix3_from_quaternion(
+						linalg.quaternion_from_forward_and_up(
+							-linalg.normalize(camera.target - camera.position),
+							linalg.normalize(camera.up),
+						),
+					)
+					rot = linalg.quaternion_from_matrix3_f32(cam_rot * base_rot)
+				} else {
+					//rot = j.rotation
+				}
+				trans[idx] = raylib.MatrixCompose(j.position, rot, j.scale)
+			}
+			{
+				raylib.SetShaderValueV(
+					this.particle_shader,
+					color_loc,
+					&cols[0],
+					.VEC4,
+					cast(i32)len(cols),
+				)
+			}
+			old_text := this.particle_material.maps[0].texture
+
+			if i.texture in this.textures {
+				this.particle_material.maps[0].texture = this.textures[i.texture]
+			} else {
+				this.particle_material.maps[0].texture = this.base_diffuse_map.texture
+			}
+			msh := this.meshes["plane"]
+			if i.mesh_name in this.meshes && !i.billboards {
+				msh = this.meshes[i.mesh_name]
+			}
+			raylib.DrawMeshInstanced(
+				msh.meshes[0],
+				this.particle_material,
+				&trans[0],
+				cast(i32)len(trans),
+			)
+			this.particle_material.maps[0].texture = old_text
+			rlgl.SetBlendMode(cast(i32)rlgl.BlendMode.ALPHA)
 		}
 	}
 	//	rlgl.DisableDepthMask()
@@ -682,12 +815,14 @@ graphics_step :: proc() {
 reset_cmd_buffer :: proc(buffer: ^GraphicsCommandBuffer) {
 	clear(&buffer.commands)
 	clear(&buffer.objects)
+	clear(&buffer.particles)
 	mem.dynamic_arena_free_all(&buffer.arena)
 }
 
 destroy_cmd_buffer :: proc(buffer: ^GraphicsCommandBuffer) {
 	delete(buffer.commands)
 	delete(buffer.objects)
+	delete(buffer.particles)
 	mem.dynamic_arena_destroy(&buffer.arena)
 	free(buffer)
 }
@@ -717,36 +852,16 @@ create_graphics_context :: proc() -> ^GraphicsContext {
 	out.meshes = make(map[string]raylib.Model)
 	out.textures = make(map[string]raylib.Texture)
 	{
-		cube := raylib.GenMeshCube(1., 1., 1.)
-		cube_model := raylib.LoadModelFromMesh(cube)
-		out.meshes[strings.clone("cube")] = cube_model
-		sphere := raylib.GenMeshSphere(0.5, 16, 16)
-		sphere_model := raylib.LoadModelFromMesh(sphere)
-		out.meshes[strings.clone("sphere")] = sphere_model
-		cylinder := raylib.GenMeshCylinder(0.5, 1., 16)
-		cylinder_model := raylib.LoadModelFromMesh(cylinder)
-		out.meshes[strings.clone("cylinder")] = cylinder_model
-		cone := raylib.GenMeshCone(0.5, 1., 16)
-		cone_model := raylib.LoadModelFromMesh(cone)
-		out.meshes[strings.clone("cone")] = cone_model
-		torus := raylib.GenMeshTorus(0.5, 1., 16, 16)
-		torus_model := raylib.LoadModelFromMesh(torus)
-		out.meshes[strings.clone("torus")] = torus_model
-		star_model := raylib.LoadModelFromMesh(raylib.GenMeshSphere(1., 3, 3))
-		out.meshes[strings.clone("star")] = star_model
-
-	}
-	{
 		out.light_depth_buffer = _create_shadowmap(1024, 1024)
 	}
 	{
-		out.base_diffuse_map = raylib.LoadRenderTexture(1000, 1000)
+		out.base_diffuse_map = raylib.LoadRenderTexture(256, 256)
 		raylib.BeginTextureMode(out.base_diffuse_map)
 		raylib.ClearBackground(raylib.WHITE)
 		raylib.EndTextureMode()
 	}
 	{
-		out.base_normal_map = raylib.LoadRenderTexture(1000, 1000)
+		out.base_normal_map = raylib.LoadRenderTexture(256, 256)
 		raylib.BeginTextureMode(out.base_normal_map)
 		raylib.ClearBackground(raylib.BLUE)
 		raylib.EndTextureMode()
@@ -781,7 +896,8 @@ create_graphics_context :: proc() -> ^GraphicsContext {
 	}
 	{
 		out.particle_material = raylib.LoadMaterialDefault()
-		out.particle_material.shader = raylib.LoadShader("instance.vert", "instance.frag")
+		out.particle_shader = raylib.LoadShader("instance.vert", "instance.frag")
+		out.particle_material.shader = out.particle_shader
 	}
 	out.shader = raylib.LoadShader("main.vert", "main.frag")
 	out.base_mat = raylib.LoadMaterialDefault()
@@ -790,6 +906,7 @@ create_graphics_context :: proc() -> ^GraphicsContext {
 	out.font = raylib.LoadFont("Ac437_IBM_VGA_9x16.ttf")
 	out.write_command_buffer = create_command_buffer()
 	out.read_command_buffer = create_command_buffer()
+	create_default_assets(out)
 	return out
 }
 
@@ -887,4 +1004,43 @@ update_logs :: proc() {
 	}
 	delete(this.values)
 	this.values = out_set
+}
+
+create_default_assets :: proc(this: ^GraphicsContext) {
+	{
+		cube := raylib.GenMeshCube(1., 1., 1.)
+		cube_model := raylib.LoadModelFromMesh(cube)
+		this.meshes[strings.clone("cube")] = cube_model
+		sphere := raylib.GenMeshSphere(0.5, 16, 16)
+		sphere_model := raylib.LoadModelFromMesh(sphere)
+		this.meshes[strings.clone("sphere")] = sphere_model
+		cylinder := raylib.GenMeshCylinder(0.5, 1., 16)
+		cylinder_model := raylib.LoadModelFromMesh(cylinder)
+		this.meshes[strings.clone("cylinder")] = cylinder_model
+		cone := raylib.GenMeshCone(0.5, 1., 16)
+		cone_model := raylib.LoadModelFromMesh(cone)
+		this.meshes[strings.clone("cone")] = cone_model
+		torus := raylib.GenMeshTorus(0.5, 1., 16, 16)
+		torus_model := raylib.LoadModelFromMesh(torus)
+		this.meshes[strings.clone("torus")] = torus_model
+		star_model := raylib.LoadModelFromMesh(raylib.GenMeshSphere(1., 3, 3))
+		this.meshes[strings.clone("star")] = star_model
+		plane_model := raylib.LoadModelFromMesh(raylib.GenMeshPlane(1., 1., 1, 1))
+		this.meshes[strings.clone("plane")] = plane_model
+	}
+	{
+
+		{
+			img := raylib.GenImageColor(256, 256, {0, 0, 0, 0})
+			defer raylib.UnloadImage(img)
+			raylib.ImageDrawCircle(&img, 128, 128, 128, raylib.WHITE)
+			this.textures[strings.clone("circle")] = raylib.LoadTextureFromImage(img)
+		}
+		{
+			img := raylib.GenImageColor(256, 256, {0, 0, 0, 0})
+			defer raylib.UnloadImage(img)
+			raylib.ImageDrawRectangle(&img, 25, 25, 256 - 50, 256 - 50, raylib.WHITE)
+			this.textures[strings.clone("square")] = raylib.LoadTextureFromImage(img)
+		}
+	}
 }

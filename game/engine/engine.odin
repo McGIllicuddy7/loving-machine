@@ -31,7 +31,11 @@ Event :: struct {
 	data:   EventData,
 }
 
-EntityTag :: enum {}
+EntityTag :: enum {
+	Intangible,
+}
+
+Vec3f :: raylib.Vector3
 
 EntityMesh :: struct {
 	name:                  string,
@@ -304,6 +308,7 @@ create_entity :: proc(
 				out_ref.gen = manager.generations[i]
 				out_ref.idx = cast(u32)i
 				tmp: ^Entity = cast(^Entity)out
+				tmp._type = T
 				tmp.destructor = vtable.destructor
 				tmp.on_event = vtable.on_event
 				tmp.on_render = vtable.on_render
@@ -430,7 +435,9 @@ game_tick :: proc() {
 		clear(&manager.physics_object_list)
 		for i in entity_list {
 			assert(i != nil)
-			append(&manager.physics_object_list, TaggedPhysicsObject{i.self_ref, &i.phys})
+			if EntityTag.Intangible not_in i.tags {
+				append(&manager.physics_object_list, TaggedPhysicsObject{i.self_ref, &i.phys})
+			}
 		}
 		events := physics_update(_get_all_physics_objects(), cast(f64)delta_time, frame_alloc())
 		world := _get_world()
@@ -488,8 +495,121 @@ game_tick :: proc() {
 					break
 				}
 				ev = queue.pop_front(&world.events)
+				tg := get_entity(ev.target)
+				if tg != nil {
+					if tg.on_event != nil {
+						tg->on_event(ev)
+					}
+				}
 			}
 		}
 	}
 	frame_destroy_entities()
+}
+
+
+ParticleSystem :: struct {
+	using _parent:                            Entity,
+	system:                                   GraphicsParticleSystem,
+	post_update_func:                         proc(
+		this: ^ParticleSystem,
+		dt: f32,
+	) -> (
+		should_destroy: bool,
+	),
+	on_use_post_update_func_to_check_destroy: bool,
+}
+
+spawn_particle_system :: proc(
+	center: Vec3,
+	direction: Vec3,
+	mode: DrawingMode,
+	is_billboard: bool = false,
+	mesh: string = "sphere",
+	texture: string = "",
+	spawn_func: proc(center: Vec3f, direction: Vec3f, initial: ^[dynamic]Particle),
+	post_update_func: proc(this: ^ParticleSystem, dt: f32) -> (should_destroy: bool) = nil,
+	check_post_update_func_to_destroy := false,
+) -> (
+	EntityRef,
+	^ParticleSystem,
+) {
+	vtable: EntityVtable
+	vtable.destructor = particle_system_destructor
+	vtable.on_update = particle_system_on_update
+	vtable.on_render = particle_system_on_render
+	rf, ptr := create_entity(ParticleSystem, vtable)
+	inital_set := make([dynamic]Particle)
+	defer delete(inital_set)
+	spawn_func(cast(Vec3f)center, cast(Vec3f)direction, &inital_set)
+	assert(len(inital_set) > 0 && len(inital_set) <= 4096)
+	ptr.system.particles = make_soa_slice(#soa[]Particle, len(inital_set), engine_alloc())
+	ptr.tags |= {.Intangible}
+	for i, idx in inital_set {
+		ptr.system.particles[idx] = i
+	}
+	ptr.system.mode = mode
+	ptr.system.mesh_name = string_clone(mesh)
+	ptr.system.drag = 0.5
+	ptr.system.texture = string_clone(texture)
+	ptr.system.billboards = is_billboard
+	ptr.post_update_func = post_update_func
+	ptr.on_use_post_update_func_to_check_destroy = check_post_update_func_to_destroy
+	return rf, ptr
+}
+
+particle_system_on_render :: proc(this: ^ParticleSystem) {
+	bind_particle_system(this.system)
+}
+
+particle_system_on_update :: proc(this: ^ParticleSystem, dt: f32) {
+	living_particles := false
+	drag := this.system.drag
+	for &i in this.system.particles {
+		if i.remaining_lifetime > 0. {
+			i.position += i.velocity * dt
+			i.velocity -= i.velocity * dt * drag
+			i.remaining_lifetime -= cast(f64)dt
+			living_particles = true
+		}
+	}
+	thinks_should_exit := false
+	if this.post_update_func != nil {
+		thinks_should_exit = this->post_update_func(dt)
+	} else {
+		if !living_particles {
+			destroy_entity(this.self_ref)
+			return
+		}
+	}
+	if this.on_use_post_update_func_to_check_destroy {
+		if thinks_should_exit {
+			destroy_entity(this.self_ref)
+			return
+		}
+	} else {
+		if thinks_should_exit || (!living_particles) {
+			destroy_entity(this.self_ref)
+			return
+		}
+	}
+}
+
+particle_system_destructor :: proc(this: ^ParticleSystem) {
+	if this.system.mesh_name != "" {
+		string_free(this.system.mesh_name)
+	}
+	if this.system.texture != "" {
+		string_free(this.system.texture)
+	}
+	delete(this.system.particles, engine_alloc())
+}
+
+try_spawn_particle :: proc(this: ^ParticleSystem, particle: Particle) {
+	for &i in this.system.particles {
+		if i.remaining_lifetime < 0 {
+			i = particle
+			break
+		}
+	}
 }

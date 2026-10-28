@@ -70,7 +70,7 @@ float point_can_see_light_mul(vec3 point){
 
 vec3 calculate_incoming_light(vec3 point){
     float light_mul = point_can_see_light_mul(fragPosition);
-    float mul = light_mul*0.7+0.3;
+    float mul = light_mul;
     return vec3(mul);
 }
 
@@ -79,7 +79,9 @@ vec3 light_reflected(vec3 incoming){
     vec4 base_color = texelColor*colDiffuse*fragColor; 
     vec3 norm_base = texture(texture1, fragTexCoord).rgb;
     vec3 norm = normalize(norm_base.x* fragTangent+norm_base.y * cross(fragTangent, fragNormal)+ norm_base.z*fragNormal);
-    vec3 color = incoming*base_color.rgb*dot(norm,-light_direction);
+    float dt = clamp(dot(norm,-light_direction),0,1);
+    incoming = (incoming*0.9)*dt+light_color.rgb*0.1;
+    vec3 color = incoming* base_color.rgb;
     return color;
 }
 
