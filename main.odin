@@ -23,7 +23,7 @@ game_main :: proc() {
 	engine.init()
 	defer engine.fini()
 	fmt.printf("MAPS:%d\n", raylib.MAX_MATERIAL_MAPS)
-	for i in 0 ..< 1000 {
+	for i in 0 ..< 100 {
 		_, tmp := engine.create_entity(engine.Entity)
 		sz := 20
 		tmp.phys.position =

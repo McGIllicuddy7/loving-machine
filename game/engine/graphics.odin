@@ -2,11 +2,13 @@ package engine
 import "core:fmt"
 import "core:math"
 import "core:math/linalg"
+import "core:math/rand"
 import "core:mem"
 import "core:strings"
 import "core:sync"
 import "vendor:raylib"
 import "vendor:raylib/rlgl"
+MAX_STAR_COUNT :: 8192
 
 GraphicsObject :: struct {
 	transform:      Transform,
@@ -117,6 +119,24 @@ GraphicsCommandBuffer :: struct {
 	arena:           mem.Dynamic_Arena,
 }
 
+GraphicsStar :: struct {
+	pos:    raylib.Vector3,
+	radius: f32,
+}
+
+GraphicsSkyBox :: struct {
+	_lock:          sync.Mutex,
+	sun_pos:        raylib.Vector3,
+	sun_rad:        f32,
+	star_count:     int,
+	star_poses:     [MAX_STAR_COUNT]raylib.Vector3,
+	star_rads:      [MAX_STAR_COUNT]raylib.Vector3,
+	star_rotations: [MAX_STAR_COUNT]raylib.Quaternion,
+	sky_color:      raylib.Color,
+	sun_color:      raylib.Color,
+	star_color:     raylib.Color,
+}
+
 GraphicsContext :: struct {
 	meshes:               map[string]raylib.Model,
 	textures:             map[string]raylib.Texture2D,
@@ -126,10 +146,13 @@ GraphicsContext :: struct {
 	font:                 raylib.Font,
 	shader:               raylib.Shader,
 	material:             raylib.Material,
+	particle_material:    raylib.Material,
+	particle_shader:      raylib.Material,
 	base_mat:             raylib.Material,
 	swap_lock:            sync.Mutex,
 	write_command_buffer: ^GraphicsCommandBuffer,
 	read_command_buffer:  ^GraphicsCommandBuffer,
+	sky_box:              GraphicsSkyBox,
 }
 
 @(private = "file")
@@ -378,6 +401,28 @@ draw_graphics_objects :: proc(
 	}
 	diffuse_col_loc := raylib.GetShaderLocation(this.shader, "colDiffuse")
 	raylib.BeginMode3D(camera)
+	rlgl.SetClipPlanes(0.01, 1000.)
+	if !depth_pass {
+		rlgl.DisableDepthMask()
+		rlgl.DisableDepthTest()
+		trans := make_slice([]raylib.Matrix, MAX_STAR_COUNT)
+		defer delete(trans)
+		for i in 0 ..< this.sky_box.star_count {
+			trans[i] = raylib.MatrixCompose(
+				this.sky_box.star_poses[i] + camera.position,
+				this.sky_box.star_rotations[i],
+				this.sky_box.star_rads[i],
+			)
+		}
+		raylib.DrawMeshInstanced(
+			this.meshes["star"].meshes[0],
+			this.particle_material,
+			&trans[0],
+			cast(i32)this.sky_box.star_count,
+		)
+		rlgl.EnableDepthMask()
+		rlgl.EnableDepthTest()
+	}
 	for &i in this.read_command_buffer.objects {
 		if !(i.mesh_id in this.meshes) {
 			continue
@@ -428,7 +473,19 @@ draw_graphics_objects :: proc(
 
 }
 
+take_sky_box :: proc() -> ^GraphicsSkyBox {
+	out := &get_graphics_context().sky_box
+	sync.mutex_lock(&out._lock)
+	return out
+}
+
+release_sky_box :: proc(box: ^GraphicsSkyBox) {
+	sync.mutex_unlock(&box._lock)
+}
+
 graphics_step :: proc() {
+	bx := take_sky_box()
+	defer release_sky_box(bx)
 	this := get_graphics_context()
 	max_layer_idx := 0
 	for i in this.read_command_buffer.commands {
@@ -501,13 +558,15 @@ graphics_step :: proc() {
 		if dbg {
 			raylib.DrawTexture(this.light_depth_buffer.depth, 0, 0, raylib.WHITE)
 		} else {
-			draw_graphics_objects(
-				this,
-				this.read_command_buffer.objects[:],
-				this.read_command_buffer.camera,
-				light_cam,
-				false,
-			)
+			{
+				draw_graphics_objects(
+					this,
+					this.read_command_buffer.objects[:],
+					this.read_command_buffer.camera,
+					light_cam,
+					false,
+				)
+			}
 		}
 		for layer in 0 ..= max_layer_idx {
 			for i in this.read_command_buffer.commands {
@@ -658,6 +717,9 @@ create_graphics_context :: proc() -> ^GraphicsContext {
 		torus := raylib.GenMeshTorus(0.5, 1., 16, 16)
 		torus_model := raylib.LoadModelFromMesh(torus)
 		out.meshes[strings.clone("torus")] = torus_model
+		star_model := raylib.LoadModelFromMesh(raylib.GenMeshSphere(1., 3, 3))
+		out.meshes[strings.clone("star")] = star_model
+
 	}
 	{
 		out.light_depth_buffer = _create_shadowmap(1024, 1024)
@@ -673,6 +735,38 @@ create_graphics_context :: proc() -> ^GraphicsContext {
 		raylib.BeginTextureMode(out.base_normal_map)
 		raylib.ClearBackground(raylib.BLUE)
 		raylib.EndTextureMode()
+	}
+	{
+		STAR_COUNT :: 2048
+		#assert(STAR_COUNT < MAX_STAR_COUNT)
+		out.sky_box.star_count = STAR_COUNT
+		out.sky_box.sun_pos = {0, 50, 1000}
+		out.sky_box.sun_rad = 1.
+		out.sky_box.sun_color = raylib.WHITE
+		out.sky_box.star_color = {250, 250, 255, 255}
+		out.sky_box.sky_color = {0, 0, 50, 255}
+		rng_state := rand.PCG_Random_State{1917, 6162004}
+		rng := rand.pcg_random_generator(&rng_state)
+		for i in 0 ..< out.sky_box.star_count {
+			theta := rand.float32_range(0., 2 * math.PI, rng)
+			phi := rand.float32_range(0., 2 * math.PI, rng)
+			rad := rand.float32_range(0.9, 1)
+			sz := rand.float32_range(0.8, 1.1)
+			x := math.cos(theta) * math.sin(phi) * rad * 500.
+			y := math.sin(theta) * math.sin(phi) * rad * 500.
+			z := math.cos(phi) * rad * 500.
+			out.sky_box.star_poses[i] = {x, y, z}
+			out.sky_box.star_rotations[i] = raylib.QuaternionFromEuler(
+				rand.float32_range(0., 2 * math.PI, rng),
+				rand.float32_range(0., 2 * math.PI, rng),
+				rand.float32_range(0., 2 * math.PI, rng),
+			)
+			out.sky_box.star_rads[i] = sz
+		}
+	}
+	{
+		out.particle_material = raylib.LoadMaterialDefault()
+		out.particle_material.shader = raylib.LoadShader("instance.vert", "instance.frag")
 	}
 	out.shader = raylib.LoadShader("main.vert", "main.frag")
 	out.base_mat = raylib.LoadMaterialDefault()

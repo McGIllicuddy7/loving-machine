@@ -71,7 +71,7 @@ float point_can_see_light_mul(vec3 point){
 
 vec3 calculate_incoming_light(vec3 point){
     float light_mul = point_can_see_light_mul(fragPosition);
-    float mul = light_mul*0.8+0.2;
+    float mul = light_mul*0.6+0.4;
     return mul*light_color.rgb;
 }
 

@@ -35,6 +35,8 @@ EntityTag :: enum {}
 
 EntityMesh :: struct {
 	name:                  string,
+	diffuse_map_name:      string,
+	normal_map_name:       string,
 	color:                 raylib.Color,
 	offset:                Transform,
 	use_custom_dimensions: bool,
@@ -248,6 +250,12 @@ engine_alloc :: proc() -> mem.Allocator {
 destroy_mesh :: proc(msh: ^EntityMesh) {
 	if msh.name != "" {
 		string_free(msh.name)
+	}
+	if msh.diffuse_map_name != "" {
+		string_free(msh.diffuse_map_name)
+	}
+	if msh.normal_map_name != "" {
+		string_free(msh.normal_map_name)
 	}
 }
 
