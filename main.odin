@@ -23,14 +23,22 @@ game_main :: proc() {
 	engine.init()
 	defer engine.fini()
 	fmt.printf("MAPS:%d\n", raylib.MAX_MATERIAL_MAPS)
-	for i in 0 ..< 100 {
+	for i in 0 ..< 1000 {
 		_, tmp := engine.create_entity(engine.Entity)
-		tmp.phys.position = {cast(f64)(i % 10), cast(f64)(i / 10), 0} * 2
+		sz := 20
+		tmp.phys.position =
+			{
+				cast(f64)rand.int_range(-sz, sz + 1),
+				cast(f64)rand.int_range(-sz, sz + 1),
+				cast(f64)rand.int_range(-sz, sz + 1),
+			} *
+			1
 		tmp.phys.rotation = Quat(1)
 		tmp.phys.height = 1.
 		tmp.phys.width = 1.
 		tmp.phys.length = 1.
 		tmp.mesh.name = engine.string_clone("cube")
+		tmp.mesh.color = raylib.WHITE
 	}
 	for !raylib.WindowShouldClose() {
 		engine.game_tick()

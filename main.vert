@@ -18,6 +18,7 @@ out vec2 fragTexCoord;
 out vec4 fragColor;
 out vec3 fragNormal;
 out vec3 fragTangent;
+out vec4 realFragPosition;
 
 // NOTE: Add your custom variables here
 
@@ -30,5 +31,8 @@ void main()
     fragNormal = normalize(vec3(matNormal*vec4(vertexNormal, 1.0)));
     fragTangent= normalize(vec3(matNormal*vec4(vertexTangent, 1.0)));
     // Calculate final vertex position
-    gl_Position = mvp*vec4(vertexPosition, 1.0);
+    realFragPosition = mvp*vec4(vertexPosition, 1.0);
+    gl_Position =realFragPosition;
+    realFragPosition.xyz /= realFragPosition.w; 
+    realFragPosition.xyz = (realFragPosition.xyz + 1.0)/2.0; 
 }

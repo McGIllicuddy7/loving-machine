@@ -121,12 +121,12 @@ GraphicsContext :: struct {
 	meshes:               map[string]raylib.Model,
 	textures:             map[string]raylib.Texture2D,
 	light_depth_buffer:   raylib.RenderTexture2D,
-	depth_buffer:         raylib.RenderTexture2D,
 	base_diffuse_map:     raylib.RenderTexture2D,
 	base_normal_map:      raylib.RenderTexture2D,
 	font:                 raylib.Font,
 	shader:               raylib.Shader,
 	material:             raylib.Material,
+	base_mat:             raylib.Material,
 	swap_lock:            sync.Mutex,
 	write_command_buffer: ^GraphicsCommandBuffer,
 	read_command_buffer:  ^GraphicsCommandBuffer,
@@ -346,6 +346,88 @@ set_camera :: proc(camera: raylib.Camera3D) {
 	get_graphics_context().write_command_buffer.camera = camera
 }
 
+draw_graphics_objects :: proc(
+	this: ^GraphicsContext,
+	meshes: []GraphicsObject,
+	camera: raylib.Camera3D,
+	light_camera: raylib.Camera,
+	depth_pass: bool,
+) {
+	dir_loc := raylib.GetShaderLocation(this.shader, "light_direction")
+	//assert(dir_loc != -1)
+	tmp := linalg.normalize(raylib.Vector3{0, 0, -1})
+	raylib.SetShaderValue(this.shader, dir_loc, &tmp, .VEC3)
+	rough_loc := raylib.GetShaderLocation(this.shader, "roughness")
+	metal_loc := raylib.GetShaderLocation(this.shader, "metallic")
+	depth_pass_loc := raylib.GetShaderLocation(this.shader, "is_depth_pass")
+	{
+		tmp: i32 = 1 if depth_pass else 0
+		raylib.SetShaderValue(this.shader, depth_pass_loc, &tmp, .INT)
+		tmp2: raylib.Camera3D = light_camera
+		cam_mat := raylib.GetCameraProjectionMatrix(&tmp2, 1.) * raylib.GetCameraMatrix(tmp2)
+		cam_mat_loc := raylib.GetShaderLocation(this.shader, "light_matrix")
+		raylib.BeginMode3D(light_camera)
+		light_view := rlgl.GetMatrixModelview()
+		light_proj := rlgl.GetMatrixProjection()
+		light_view_proj := light_view * light_proj
+		raylib.SetShaderValueMatrix(this.shader, cam_mat_loc, cam_mat)
+		raylib.EndMode3D()
+		//assert(cam_mat_loc != -1)
+		//		fmt.printf("%v\n", light_view_proj)
+
+	}
+	diffuse_col_loc := raylib.GetShaderLocation(this.shader, "colDiffuse")
+	raylib.BeginMode3D(camera)
+	for &i in this.read_command_buffer.objects {
+		if !(i.mesh_id in this.meshes) {
+			continue
+		}
+		pos := cast([3]f32)i.transform.position
+		scale := cast(raylib.Vector3)i.scale
+		base_rot := i.transform.rotation
+		pi :: math.PI
+		if i.mesh_id == "cylinder" {
+			base_rot = base_rot * linalg.quaternion_from_euler_angles_f64(0., 00., pi / 2, .XYZ)
+		}
+		msh := &this.meshes[i.mesh_id]
+		trans := raylib.MatrixCompose(pos, cast(raylib.Quaternion)base_rot, scale)
+		if !depth_pass {
+			c_col := cast([4]f32)i.tint / 255.
+			raylib.SetShaderValue(this.shader, diffuse_col_loc, &c_col, .VEC4)
+			if i.mesh_diffuse != "" {
+				this.material.maps[0].texture = this.textures[i.mesh_diffuse]
+			} else {
+				this.material.maps[0].texture = this.base_diffuse_map.texture
+			}
+			if i.mesh_normal != "" {
+				this.material.maps[1].texture = this.textures[i.mesh_normal]
+			} else {
+				this.material.maps[1].texture = this.base_normal_map.texture
+			}
+			if depth_pass {
+				this.material.maps[2].texture = this.base_diffuse_map.texture
+			} else {
+				this.material.maps[2].texture = this.light_depth_buffer.depth
+			}
+			raylib.SetShaderValue(this.shader, rough_loc, &i.mesh_roughness, .FLOAT)
+			raylib.SetShaderValue(this.shader, metal_loc, &i.mesh_metallic, .FLOAT)
+		}
+		for j in 0 ..< msh.meshCount {
+			cur := msh.meshes[j]
+			if depth_pass {
+				raylib.DrawMesh(cur, this.base_mat, trans)
+			} else {
+				raylib.DrawMesh(cur, this.material, trans)
+			}
+
+		}
+	}
+	//	rlgl.DisableDepthMask()
+	//rlgl.DisableDepthTest()
+	raylib.EndMode3D()
+
+}
+
 graphics_step :: proc() {
 	this := get_graphics_context()
 	max_layer_idx := 0
@@ -374,142 +456,143 @@ graphics_step :: proc() {
 			}
 		}
 	}
-	raylib.BeginDrawing()
-	raylib.ClearBackground(raylib.BLACK)
-	raylib.BeginMode3D(this.read_command_buffer.camera)
 	{
-		dir_loc := raylib.GetShaderLocation(this.shader, "light_direction")
-		assert(dir_loc != -1)
-		tmp := linalg.normalize(raylib.Vector3{2, 0, 1})
-		raylib.SetShaderValue(this.shader, dir_loc, &tmp, .VEC3)
-		rough_loc := raylib.GetShaderLocation(this.shader, "roughness")
-		metal_loc := raylib.GetShaderLocation(this.shader, "metallic")
-		for &i in this.read_command_buffer.objects {
-			if !(i.mesh_id in this.meshes) {
-				continue
-			}
-			pos := cast(raylib.Vector3)i.transform.position
-			scale := cast(raylib.Vector3)i.scale
-			base_rot := i.transform.rotation
-			pi :: math.PI
-			if i.mesh_id == "cylinder" {
-				base_rot =
-					base_rot * linalg.quaternion_from_euler_angles_f64(0., 00., pi / 2, .XYZ)
-			}
-			msh := &this.meshes[i.mesh_id]
-			trans := raylib.MatrixCompose(pos, cast(raylib.Quaternion)base_rot, scale)
-			if i.mesh_diffuse != "" {
-				this.material.maps[0].texture = this.textures[i.mesh_diffuse]
-			} else {
-				this.material.maps[0].texture = this.base_diffuse_map.texture
-			}
-			if i.mesh_normal != "" {
-				this.material.maps[1].texture = this.textures[i.mesh_normal]
-			} else {
-				this.material.maps[1].texture = this.base_normal_map.texture
-			}
-			this.material.maps[2].texture = this.light_depth_buffer.texture
-			raylib.SetShaderValue(this.shader, rough_loc, &i.mesh_roughness, .FLOAT)
-			raylib.SetShaderValue(this.shader, metal_loc, &i.mesh_metallic, .FLOAT)
-			for j in 0 ..< msh.meshCount {
-				cur := msh.meshes[j]
-				raylib.DrawMesh(cur, this.material, trans)
-			}
-		}
-	}
-	raylib.EndMode3D()
-	for layer in 0 ..= max_layer_idx {
-		for i in this.read_command_buffer.commands {
-			if i.layer != layer {
-				continue
-			}
-			switch v in i.command {
-			case GCmdDrawRectangle:
-				{
-					raylib.DrawRectangle(v.x, v.y, v.width, v.height, v.color)
-				}
-			case GCmdDrawRectangleRounded:
-				{
-					raylib.DrawRectangleRounded(
-						{cast(f32)v.x, cast(f32)v.y, cast(f32)v.width, cast(f32)v.height},
-						0.1,
-						16,
-						v.color,
-					)
-				}
-			case GCmdDrawTriangle:
-				{
-					raylib.DrawTriangle(v.points[0], v.points[1], v.points[2], v.color)
-				}
-			case GCmdDrawCircle:
-				{
-					raylib.DrawCircle(v.x, v.y, cast(f32)v.radius, v.color)
-				}
-			case GCmdDrawText:
-				{
-					raylib.DrawTextEx(
-						this.font,
-						strings.clone_to_cstring(v.content, context.temp_allocator),
-						[2]f32{cast(f32)v.x, cast(f32)v.y},
-						cast(f32)v.text_height,
-						1.,
-						v.color,
-					)
 
+		light_dir := this.read_command_buffer.light_direction
+		light_cam: raylib.Camera3D
+		light_cam.position = {0, 0, 256} + this.read_command_buffer.camera.position
+		light_cam.fovy = 50.
+		light_cam.projection = .ORTHOGRAPHIC
+		light_cam.target = {0, 0, 0}
+		light_cam.up = {0, 1, 0}
+		light_pos_loc := raylib.GetShaderLocation(this.shader, "light_pos")
+		{
+			view_pos_loc := raylib.GetShaderLocation(this.shader, "view_pos")
+			raylib.SetShaderValue(this.shader, view_pos_loc, &{}, .VEC3)
+		}
+		raylib.SetShaderValue(this.shader, light_pos_loc, &light_cam.position, .VEC3)
+		{
+			raylib.BeginTextureMode(this.light_depth_buffer)
+			raylib.ClearBackground(raylib.WHITE)
+			draw_graphics_objects(
+				this,
+				this.read_command_buffer.objects[:],
+				light_cam,
+				light_cam,
+				true,
+			)
+			raylib.EndTextureMode()
+		}
+		raylib.BeginDrawing()
+		raylib.ClearBackground(raylib.BLACK)
+		@(static) dbg := false
+		if raylib.IsKeyPressed(.SPACE) {
+			dbg = !dbg
+		}
+		if dbg {
+			raylib.DrawTexture(this.light_depth_buffer.depth, 0, 0, raylib.WHITE)
+		} else {
+			draw_graphics_objects(
+				this,
+				this.read_command_buffer.objects[:],
+				this.read_command_buffer.camera,
+				light_cam,
+				false,
+			)
+		}
+		for layer in 0 ..= max_layer_idx {
+			for i in this.read_command_buffer.commands {
+				if i.layer != layer {
+					continue
 				}
-			case GCmdBeginScissor:
-				{
-					raylib.BeginScissorMode(v.x, v.y, v.width, v.height)
-				}
-			case GCmdEndScissor:
-				{
-					raylib.EndScissorMode()
-				}
-			case GCmdDrawTexture:
-				{
-					if !(v.name in this.textures) {
-						continue
+				switch v in i.command {
+				case GCmdDrawRectangle:
+					{
+						raylib.DrawRectangle(v.x, v.y, v.width, v.height, v.color)
 					}
-					texture := this.textures[v.name]
-					tw := cast(f32)texture.width
-					th := cast(f32)texture.height
-					w := cast(f32)v.max_width
-					h := cast(f32)v.max_height
-					aspect_ratio := cast(f32)texture.height / cast(f32)texture.width
-					dh := w * aspect_ratio
-					dw := w
-					if aspect_ratio * w > h {
-						dh = h
-						dw = h / aspect_ratio
+				case GCmdDrawRectangleRounded:
+					{
+						raylib.DrawRectangleRounded(
+							{cast(f32)v.x, cast(f32)v.y, cast(f32)v.width, cast(f32)v.height},
+							0.1,
+							16,
+							v.color,
+						)
 					}
-					x := cast(f32)v.x
-					y := cast(f32)v.y
-					raylib.DrawTexturePro(
-						texture,
-						{0., 0., tw, th},
-						{x, y, w, h},
-						{0, 0},
-						0.,
-						v.color,
-					)
+				case GCmdDrawTriangle:
+					{
+						raylib.DrawTriangle(v.points[0], v.points[1], v.points[2], v.color)
+					}
+				case GCmdDrawCircle:
+					{
+						raylib.DrawCircle(v.x, v.y, cast(f32)v.radius, v.color)
+					}
+				case GCmdDrawText:
+					{
+						raylib.DrawTextEx(
+							this.font,
+							strings.clone_to_cstring(v.content, context.temp_allocator),
+							[2]f32{cast(f32)v.x, cast(f32)v.y},
+							cast(f32)v.text_height,
+							1.,
+							v.color,
+						)
+
+					}
+				case GCmdBeginScissor:
+					{
+						raylib.BeginScissorMode(v.x, v.y, v.width, v.height)
+					}
+				case GCmdEndScissor:
+					{
+						raylib.EndScissorMode()
+					}
+				case GCmdDrawTexture:
+					{
+						if !(v.name in this.textures) {
+							continue
+						}
+						texture := this.textures[v.name]
+						tw := cast(f32)texture.width
+						th := cast(f32)texture.height
+						w := cast(f32)v.max_width
+						h := cast(f32)v.max_height
+						aspect_ratio := cast(f32)texture.height / cast(f32)texture.width
+						dh := w * aspect_ratio
+						dw := w
+						if aspect_ratio * w > h {
+							dh = h
+							dw = h / aspect_ratio
+						}
+						x := cast(f32)v.x
+						y := cast(f32)v.y
+						raylib.DrawTexturePro(
+							texture,
+							{0., 0., tw, th},
+							{x, y, w, h},
+							{0, 0},
+							0.,
+							v.color,
+						)
+					}
+				case GCmdLoadModel:
+				case GCmdLoadTexture:
+				case GCmdEnsureModelLoaded:
+				case GCmdEnsureTextureLoaded:
 				}
-			case GCmdLoadModel:
-			case GCmdLoadTexture:
-			case GCmdEnsureModelLoaded:
-			case GCmdEnsureTextureLoaded:
 			}
 		}
-	}
-	render_logs()
-	raylib.EndDrawing()
-	update_logs()
-	{
-		reset_cmd_buffer(this.read_command_buffer)
-		sync.mutex_lock(&this.swap_lock)
-		defer sync.mutex_unlock(&this.swap_lock)
-		tmp := this.write_command_buffer
-		this.write_command_buffer = this.read_command_buffer
-		this.read_command_buffer = tmp
+		render_logs()
+		raylib.EndDrawing()
+		update_logs()
+		{
+			reset_cmd_buffer(this.read_command_buffer)
+			sync.mutex_lock(&this.swap_lock)
+			defer sync.mutex_unlock(&this.swap_lock)
+			tmp := this.write_command_buffer
+			this.write_command_buffer = this.read_command_buffer
+			this.read_command_buffer = tmp
+		}
 	}
 }
 
@@ -567,37 +650,63 @@ create_graphics_context :: proc() -> ^GraphicsContext {
 		torus_model := raylib.LoadModelFromMesh(torus)
 		out.meshes[strings.clone("torus")] = torus_model
 	}
+	{
+		out.light_depth_buffer = _create_shadowmap(1024, 1024)
+	}
+	{
+		out.base_diffuse_map = raylib.LoadRenderTexture(1000, 1000)
+		raylib.BeginTextureMode(out.base_diffuse_map)
+		raylib.ClearBackground(raylib.WHITE)
+		raylib.EndTextureMode()
+	}
+	{
+		out.base_normal_map = raylib.LoadRenderTexture(1000, 1000)
+		raylib.BeginTextureMode(out.base_normal_map)
+		raylib.ClearBackground(raylib.BLUE)
+		raylib.EndTextureMode()
+	}
 	out.shader = raylib.LoadShader("main.vert", "main.frag")
+	out.base_mat = raylib.LoadMaterialDefault()
 	out.material = raylib.LoadMaterialDefault()
 	out.material.shader = out.shader
 	out.font = raylib.LoadFont("Ac437_IBM_VGA_9x16.ttf")
 	out.write_command_buffer = create_command_buffer()
 	out.read_command_buffer = create_command_buffer()
-	out.depth_buffer = raylib.LoadRenderTexture(1000, 1000)
-
-	{
-		out.base_diffuse_map = raylib.LoadRenderTexture(256, 256)
-		raylib.BeginTextureMode(out.base_diffuse_map)
-		raylib.ClearBackground(raylib.RED)
-		raylib.EndTextureMode()
-	}
-	{
-		out.base_normal_map = raylib.LoadRenderTexture(256, 25)
-		raylib.BeginTextureMode(out.base_normal_map)
-		raylib.ClearBackground(raylib.GREEN)
-		raylib.EndTextureMode()
-	}
-	{
-		out.light_depth_buffer = raylib.LoadRenderTexture(1000, 1000)
-		raylib.BeginTextureMode(out.light_depth_buffer)
-		raylib.ClearBackground(raylib.YELLOW)
-		raylib.EndTextureMode()
-	}
-
-
 	return out
 }
 
+_create_shadowmap :: proc(width: i32, height: i32) -> raylib.RenderTexture2D {
+	//https://github.com/raysan5/raylib/blob/master/examples/shaders/shaders_shadowmap_rendering.c
+	out: raylib.RenderTexture2D
+	out.id = rlgl.LoadFramebuffer()
+	out.texture.width = width
+	out.texture.height = height
+	rlgl.EnableFramebuffer(out.id)
+	out.depth.id = rlgl.LoadTextureDepth(width, height, false)
+	out.depth.width = width
+	out.depth.height = height
+	out.depth.format = cast(raylib.PixelFormat)19
+	out.depth.mipmaps = 1
+	rlgl.FramebufferAttach(
+		out.id,
+		out.depth.id,
+		cast(i32)rlgl.FramebufferAttachType.DEPTH,
+		cast(i32)rlgl.FramebufferAttachTextureType.TEXTURE2D,
+		0,
+	)
+	if (rlgl.FramebufferComplete(out.id)) {
+		raylib.TraceLog(.INFO, "FBO: [ID %i] Framebuffer object created successfully", out.id)
+		rlgl.DisableFramebuffer()
+	} else {
+		raylib.TraceLog(.WARNING, "FBO: Framebuffer object can not be created")
+	}
+	return out
+}
+_unload_shadowmap_render_texture :: proc(target: raylib.RenderTexture2D) {
+	if (target.id > 0) {
+		rlgl.UnloadFramebuffer(target.id)
+	}
+}
 
 destroy_graphics_context :: proc(this: ^GraphicsContext) {
 	for key, value in this.meshes {
