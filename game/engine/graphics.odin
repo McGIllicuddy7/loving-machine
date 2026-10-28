@@ -404,7 +404,7 @@ draw_graphics_objects :: proc(
 	raylib.BeginMode3D(camera)
 	rlgl.SetClipPlanes(0.01, 1000.)
 	if !depth_pass {
-		/*
+
 		rlgl.DisableDepthMask()
 		//	rlgl.DisableDepthTest()
 		trans := make_slice([]raylib.Matrix, MAX_STAR_COUNT)
@@ -430,7 +430,7 @@ draw_graphics_objects :: proc(
 		raylib.DrawMesh(this.meshes["sphere"].meshes[0], this.base_mat, sun_trans)
 		rlgl.EnableDepthMask()
 		//		rlgl.EnableDepthTest()
-		*/
+
 	}
 	for &i in this.read_command_buffer.objects {
 		if !(i.mesh_id in this.meshes) {
@@ -766,7 +766,7 @@ create_graphics_context :: proc() -> ^GraphicsContext {
 			theta := rand.float32_range(0., 2 * math.PI, rng)
 			phi := rand.float32_range(-math.PI, math.PI, rng)
 			rad := rand.float32_range(0.9, 1) * 250.
-			sz := rand.float32_range(0.5, 4.)
+			sz := rand.float32_range(0.25, 1.)
 			x := math.cos(theta) * math.sin(phi) * rad
 			y := math.sin(theta) * math.sin(phi) * rad
 			z := math.cos(phi) * rad

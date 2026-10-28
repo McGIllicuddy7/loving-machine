@@ -51,7 +51,7 @@ float point_can_see_light_mul(vec3 point){
     float cur_depth = frag_pos_light_space.z;
     float bias = max(0.0002*(1.0 - dot(fragNormal, -light_direction)), 0.00002) + 0.00001;
     int shadow_counter = 0;
-    const int dx = 1;
+    const int dx = 4;
     const int num_samples = (dx*2+1)*(dx*2+1);
     vec2 texel_size = vec2(1.0/float(1024));
     for (int x = -dx; x <= dx; x++)
