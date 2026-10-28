@@ -460,7 +460,7 @@ graphics_step :: proc() {
 
 		light_dir := this.read_command_buffer.light_direction
 		light_cam: raylib.Camera3D
-		light_cam.position = {0, 0, 256} + this.read_command_buffer.camera.position
+		light_cam.position = {0, 0, 1024} + this.read_command_buffer.camera.position
 		light_cam.fovy = 50.
 		light_cam.projection = .ORTHOGRAPHIC
 		light_cam.target = {0, 0, 0}
@@ -469,6 +469,15 @@ graphics_step :: proc() {
 		{
 			view_pos_loc := raylib.GetShaderLocation(this.shader, "view_pos")
 			raylib.SetShaderValue(this.shader, view_pos_loc, &{}, .VEC3)
+		}
+		{
+			light_col_loc := raylib.GetShaderLocation(this.shader, "light_color")
+			col: [4]f32
+			base_col: raylib.Color = {255, 254, 253, 0}
+			col.rgb = cast([3]f32)base_col.rgb / 255.
+			col.a = 1.
+			raylib.SetShaderValue(this.shader, light_col_loc, &col, .VEC4)
+
 		}
 		raylib.SetShaderValue(this.shader, light_pos_loc, &light_cam.position, .VEC3)
 		{

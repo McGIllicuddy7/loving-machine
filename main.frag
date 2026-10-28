@@ -18,6 +18,7 @@ uniform vec4 colDiffuse;
 uniform vec3 light_direction;
 uniform int is_depth_pass;
 uniform vec3 light_pos;
+uniform vec4 light_color;
 uniform mat4 light_matrix;
 uniform vec3 view_pos;
 // Output fragment color
@@ -63,18 +64,32 @@ float point_can_see_light_mul(vec3 point){
             };
         }
     } 
-    float outv = 1-float(shadow_counter)/float(num_samples);
+
+    float outv = 1-pow(float(shadow_counter)/float(num_samples), 1./4);
     return outv;
+}
+
+vec3 calculate_incoming_light(vec3 point){
+    float light_mul = point_can_see_light_mul(fragPosition);
+    float mul = light_mul*0.8+0.2;
+    return mul*light_color.rgb;
+}
+
+vec3 light_reflected(vec3 incoming){
+    vec4 texelColor = texture(texture0,fragTexCoord);
+    vec4 base_color = texelColor*colDiffuse*fragColor; 
+    vec3 norm_base = texture(texture1, fragTexCoord).rgb;
+    vec3 norm = normalize(norm_base.x* fragTangent+norm_base.y * cross(fragTangent, fragNormal)+ norm_base.z*fragNormal);
+    vec3 color = incoming*base_color.rgb*dot(norm,-light_direction);
+    return color;
 }
 
 void ordinary_pass(){
     vec4 texelColor = texture(texture0,fragTexCoord);
     vec4 base_color = texelColor*colDiffuse*fragColor; 
     float alpha = base_color.a;
-    float light_mul = clamp(dot(fragNormal,-normalize(light_direction)), 0,1);
-    light_mul*= point_can_see_light_mul(fragPosition);
-    float mul = light_mul*0.8+0.2;
-    finalColor = base_color*mul;
+    vec3 incoming = calculate_incoming_light(fragPosition);
+    finalColor.rgb = light_reflected(incoming);
     finalColor.a = alpha;
 }
 
