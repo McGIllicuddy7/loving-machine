@@ -387,14 +387,15 @@ draw_graphics_objects :: proc(
 		tmp: i32 = 1 if depth_pass else 0
 		raylib.SetShaderValue(this.shader, depth_pass_loc, &tmp, .INT)
 		tmp2: raylib.Camera3D = light_camera
-		cam_mat := raylib.GetCameraProjectionMatrix(&tmp2, 1.) * raylib.GetCameraMatrix(tmp2)
+		cam_mat := raylib.GetCameraMatrix(tmp2) * raylib.GetCameraProjectionMatrix(&tmp2, 1.)
 		cam_mat_loc := raylib.GetShaderLocation(this.shader, "light_matrix")
 		raylib.BeginMode3D(light_camera)
+		rlgl.SetClipPlanes(0.01, 1000.)
 		light_view := rlgl.GetMatrixModelview()
 		light_proj := rlgl.GetMatrixProjection()
-		light_view_proj := light_view * light_proj
-		raylib.SetShaderValueMatrix(this.shader, cam_mat_loc, cam_mat)
+		light_view_proj := light_proj * light_view
 		raylib.EndMode3D()
+		raylib.SetShaderValueMatrix(this.shader, cam_mat_loc, light_view_proj)
 		//assert(cam_mat_loc != -1)
 		//		fmt.printf("%v\n", light_view_proj)
 
@@ -403,8 +404,9 @@ draw_graphics_objects :: proc(
 	raylib.BeginMode3D(camera)
 	rlgl.SetClipPlanes(0.01, 1000.)
 	if !depth_pass {
+		/*
 		rlgl.DisableDepthMask()
-		rlgl.DisableDepthTest()
+		//	rlgl.DisableDepthTest()
 		trans := make_slice([]raylib.Matrix, MAX_STAR_COUNT)
 		defer delete(trans)
 		for i in 0 ..< this.sky_box.star_count {
@@ -420,8 +422,15 @@ draw_graphics_objects :: proc(
 			&trans[0],
 			cast(i32)this.sky_box.star_count,
 		)
+		sun_trans := raylib.MatrixCompose(
+			this.sky_box.sun_pos + camera.position,
+			quaternion128(1),
+			raylib.Vector3(this.sky_box.sun_rad),
+		)
+		raylib.DrawMesh(this.meshes["sphere"].meshes[0], this.base_mat, sun_trans)
 		rlgl.EnableDepthMask()
-		rlgl.EnableDepthTest()
+		//		rlgl.EnableDepthTest()
+		*/
 	}
 	for &i in this.read_command_buffer.objects {
 		if !(i.mesh_id in this.meshes) {
@@ -517,15 +526,21 @@ graphics_step :: proc() {
 
 		light_dir := this.read_command_buffer.light_direction
 		light_cam: raylib.Camera3D
-		light_cam.position = {0, 0, 1024} + this.read_command_buffer.camera.position
-		light_cam.fovy = 50.
+		light_cam.position = {0, 0, 150}
+		light_cam.fovy = 45.
 		light_cam.projection = .ORTHOGRAPHIC
 		light_cam.target = {0, 0, 0}
 		light_cam.up = {0, 1, 0}
 		light_pos_loc := raylib.GetShaderLocation(this.shader, "light_pos")
 		{
 			view_pos_loc := raylib.GetShaderLocation(this.shader, "view_pos")
-			raylib.SetShaderValue(this.shader, view_pos_loc, &{}, .VEC3)
+			raylib.SetShaderValue(
+				this.shader,
+				view_pos_loc,
+				&this.read_command_buffer.camera.position,
+				.VEC3,
+			)
+			raylib.SetShaderValue(this.shader, light_pos_loc, &light_cam.position, .VEC3)
 		}
 		{
 			light_col_loc := raylib.GetShaderLocation(this.shader, "light_color")
@@ -740,8 +755,8 @@ create_graphics_context :: proc() -> ^GraphicsContext {
 		STAR_COUNT :: 2048
 		#assert(STAR_COUNT < MAX_STAR_COUNT)
 		out.sky_box.star_count = STAR_COUNT
-		out.sky_box.sun_pos = {0, 50, 1000}
-		out.sky_box.sun_rad = 1.
+		out.sky_box.sun_pos = {0, 50, 900}
+		out.sky_box.sun_rad = 100
 		out.sky_box.sun_color = raylib.WHITE
 		out.sky_box.star_color = {250, 250, 255, 255}
 		out.sky_box.sky_color = {0, 0, 50, 255}
@@ -749,17 +764,17 @@ create_graphics_context :: proc() -> ^GraphicsContext {
 		rng := rand.pcg_random_generator(&rng_state)
 		for i in 0 ..< out.sky_box.star_count {
 			theta := rand.float32_range(0., 2 * math.PI, rng)
-			phi := rand.float32_range(0., 2 * math.PI, rng)
-			rad := rand.float32_range(0.9, 1)
-			sz := rand.float32_range(0.8, 1.1)
-			x := math.cos(theta) * math.sin(phi) * rad * 500.
-			y := math.sin(theta) * math.sin(phi) * rad * 500.
-			z := math.cos(phi) * rad * 500.
+			phi := rand.float32_range(-math.PI, math.PI, rng)
+			rad := rand.float32_range(0.9, 1) * 250.
+			sz := rand.float32_range(0.5, 4.)
+			x := math.cos(theta) * math.sin(phi) * rad
+			y := math.sin(theta) * math.sin(phi) * rad
+			z := math.cos(phi) * rad
 			out.sky_box.star_poses[i] = {x, y, z}
 			out.sky_box.star_rotations[i] = raylib.QuaternionFromEuler(
-				rand.float32_range(0., 2 * math.PI, rng),
-				rand.float32_range(0., 2 * math.PI, rng),
-				rand.float32_range(0., 2 * math.PI, rng),
+				rand.float32_range(0., 360., rng),
+				rand.float32_range(0., 360., rng),
+				rand.float32_range(0., 360., rng),
 			)
 			out.sky_box.star_rads[i] = sz
 		}

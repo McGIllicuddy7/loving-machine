@@ -31,9 +31,9 @@ void depth_pass(){
 }
 vec4 transform_to_light_space(vec3 pos){
     vec4 frag_pos_light_space = light_matrix*vec4(fragPosition, 1);
-    frag_pos_light_space.xyz /= frag_pos_light_space.w; 
+    frag_pos_light_space.xyz/= frag_pos_light_space.w; 
     frag_pos_light_space.xyz = (frag_pos_light_space.xyz + 1.0)/2.0; 
-    //frag_pos_light_space.z = distance(pos, light_pos)/1000.;
+   // frag_pos_light_space.z = distance(pos, light_pos)/100.;
     return frag_pos_light_space;
 }
 
@@ -51,7 +51,7 @@ float point_can_see_light_mul(vec3 point){
     float cur_depth = frag_pos_light_space.z;
     float bias = max(0.0002*(1.0 - dot(fragNormal, -light_direction)), 0.00002) + 0.00001;
     int shadow_counter = 0;
-    const int dx = 4;
+    const int dx = 1;
     const int num_samples = (dx*2+1)*(dx*2+1);
     vec2 texel_size = vec2(1.0/float(1024));
     for (int x = -dx; x <= dx; x++)
@@ -64,15 +64,14 @@ float point_can_see_light_mul(vec3 point){
             };
         }
     } 
-
-    float outv = 1-pow(float(shadow_counter)/float(num_samples), 1./4);
+    float outv = 1-(float(shadow_counter)/float(num_samples));
     return outv;
 }
 
 vec3 calculate_incoming_light(vec3 point){
     float light_mul = point_can_see_light_mul(fragPosition);
-    float mul = light_mul*0.6+0.4;
-    return mul*light_color.rgb;
+    float mul = light_mul*0.7+0.3;
+    return vec3(mul);
 }
 
 vec3 light_reflected(vec3 incoming){
@@ -91,6 +90,16 @@ void ordinary_pass(){
     vec3 incoming = calculate_incoming_light(fragPosition);
     finalColor.rgb = light_reflected(incoming);
     finalColor.a = alpha;
+
+}
+void dbg_pass(){
+    vec4 pos = transform_to_light_space(fragPosition);
+    vec3 incoming = texture(texture2, pos.xy).rgb;
+    finalColor.rgb= vec3(0.);
+    if (pos.w== 1.){
+        finalColor.b =1.;
+    }
+    finalColor.a = 1.;
 }
 
 void main()
@@ -99,5 +108,6 @@ void main()
         depth_pass();
     }else{
        ordinary_pass();
+       //dbg_pass();
     }
 }

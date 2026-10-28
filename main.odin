@@ -25,7 +25,7 @@ game_main :: proc() {
 	fmt.printf("MAPS:%d\n", raylib.MAX_MATERIAL_MAPS)
 	for i in 0 ..< 100 {
 		_, tmp := engine.create_entity(engine.Entity)
-		sz := 20
+		sz := 6
 		tmp.phys.position =
 			{
 				cast(f64)rand.int_range(-sz, sz + 1),
