@@ -7,6 +7,10 @@ flat in int instanceId;
 // Input uniform values
 uniform sampler2D texture0;
 uniform vec4 colDiffuse;
+
+uniform vec3 light_direction;
+
+uniform vec3 light_color;
 uniform vec4 colors[1000];
 
 // Output fragment color

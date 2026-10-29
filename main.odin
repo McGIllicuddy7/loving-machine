@@ -42,61 +42,7 @@ game_main :: proc() {
 		tmp.mesh.name = engine.string_clone("cube")
 		tmp.mesh.color = raylib.WHITE
 	}
-	spawn_repeating_explosion({})
 	for !raylib.WindowShouldClose() {
 		engine.game_tick()
 	}
-}
-
-spawn_repeating_explosion :: proc(loc: Vec3) {
-	random_particle :: proc(center: Vec3f, direction: Vec3f) -> engine.Particle {
-		particle: engine.Particle
-		dir := engine.random_vec3f_n()
-		rad := rand.float32_range(0.0005, 0.005)
-		vel := rand.float32_range(0., 5.)
-		scale := rand.float32_range(0.1, 0.5)
-		particle.velocity = dir * vel + direction
-		particle.position = center
-		particle.remaining_lifetime = rand.float64_range(0.1, 10)
-		particle.rotation = quaternion128(1)
-		particle.scale = {scale, scale, scale}
-		particle.tint = raylib.RED
-		return particle
-	}
-
-	func :: proc(this: ^engine.ParticleSystem, dt: f32) -> bool {
-		hit := false
-		for &i in this.system.particles {
-			if i.remaining_lifetime > 0. {
-				i.tint.rgb = cast([3]u8)(cast([3]f32)i.tint.rgb - dt)
-				hit = true
-			}
-		}
-		if !hit {
-			if rand.float32() < 1 * dt {
-				for i in 0 ..< 512 {
-					engine.try_spawn_particle(this, random_particle({}, {}))
-				}
-			}
-		}
-		return false
-
-	}
-	spawner :: proc(
-		center: engine.Vec3f,
-		direction: engine.Vec3f,
-		list: ^[dynamic]engine.Particle,
-	) {
-		for i in 0 ..< 512 {
-			append(list, random_particle(center, direction))
-		}
-	}
-	engine.spawn_particle_system(
-		loc,
-		{},
-		.Addititve,
-		spawn_func = spawner,
-		check_post_update_func_to_destroy = true,
-		post_update_func = func,
-	)
 }

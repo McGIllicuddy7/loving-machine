@@ -26,6 +26,7 @@ POOLED_CHEAP_ENTITY_COUNT :: 16384
 EventData :: union {
 	CollisionEvent,
 }
+
 Event :: struct {
 	target: EntityRef,
 	data:   EventData,
@@ -53,13 +54,15 @@ OnUpdateType :: #type proc(this: ^Entity, delta_time: f32)
 OnRenderType :: #type proc(this: ^Entity)
 OnEventType :: #type proc(this: ^Entity, event: Event)
 DestructorType :: #type proc(this: ^Entity)
+OnLevelTransferType :: #type proc(this: ^Entity)
 
 
 EntityVtable :: struct {
-	on_update:  OnUpdateType,
-	on_render:  OnRenderType,
-	on_event:   OnEventType,
-	destructor: DestructorType,
+	on_update:         OnUpdateType,
+	on_render:         OnRenderType,
+	on_event:          OnEventType,
+	destructor:        DestructorType,
+	on_level_transfer: OnLevelTransferType,
 }
 
 DEFAULT_ENTITY_TABLE: EntityVtable = {}
@@ -69,19 +72,42 @@ DEFAULT_ENTITY_TABLE: EntityVtable = {}
 	meshes will be rendered automatically, on_render is for custom other rendering,for example ui
 	use engine_alloc() or the provided allocation functions(eg string_clone) for all allocations stored in the entity otherwise REALLLY BAD THINGS
 */
-Entity :: struct {
-	_type:            typeid,
-	tags:             bit_set[EntityTag],
-	self_ref:         EntityRef,
-	phys:             PhysicsObject,
-	control_rotation: Quat,
-	mesh:             EntityMesh,
-	health:           i32,
-	on_update:        #type proc(this: ^Entity, delta_time: f32),
-	on_render:        #type proc(this: ^Entity),
-	on_event:         #type proc(this: ^Entity, event: Event),
-	destructor:       #type proc(this: ^Entity),
+
+Daemon :: struct {
+	_type:      typeid,
+	on_update:  #type proc(this: ^Daemon, dt: f32),
+	on_event:   #type proc(this: ^Daemon, event: Event),
+	on_render:  #type proc(this: ^Daemon),
+	on_destroy: #type proc(this: ^Daemon),
 }
+
+System :: struct {
+	_type:             typeid,
+	on_update:         #type proc(this: ^System, dt: f32),
+	on_event:          #type proc(this: ^System, event: Event),
+	on_render:         #type proc(this: ^System),
+	on_destroy:        #type proc(this: ^System),
+	on_save:           #type proc(this: ^System, allocator: mem.Allocator) -> string,
+	on_load:           #type proc(this: ^System, data: string),
+	on_level_transfer: #type proc(this: ^System),
+}
+
+
+Entity :: struct {
+	_type:             typeid,
+	tags:              bit_set[EntityTag],
+	self_ref:          EntityRef,
+	phys:              PhysicsObject,
+	control_rotation:  Quat,
+	mesh:              EntityMesh,
+	health:            i32,
+	on_update:         #type proc(this: ^Entity, delta_time: f32),
+	on_render:         #type proc(this: ^Entity),
+	on_event:          #type proc(this: ^Entity, event: Event),
+	destructor:        #type proc(this: ^Entity),
+	on_level_transfer: #type proc(this: ^Entity),
+}
+
 
 TaggedEntity :: struct {
 	tag: EntityRef,
@@ -107,6 +133,7 @@ World :: struct {
 	entities:              EntityManager,
 	event_lock:            sync.Mutex,
 	events:                queue.Queue(Event),
+	daemons:               [dynamic]^Daemon,
 }
 
 _get_entity_manager :: proc() -> ^EntityManager {
@@ -128,6 +155,7 @@ Engine :: struct {
 	graphics_context:         ^GraphicsContext,
 	logs:                     Logs,
 	world:                    World,
+	systems:                  map[string]^Daemon,
 }
 
 
@@ -158,6 +186,7 @@ setup_world :: proc() {
 		world.camera.target = {1, 0, 0}
 		world.camera.up = {0, 0, 1}
 		world.camera.projection = .PERSPECTIVE
+		world.daemons = make([dynamic]^Daemon, engine_alloc())
 	}
 }
 
@@ -184,6 +213,11 @@ unload_world :: proc() {
 	}
 	{
 		world := _get_world()
+		for i in world.daemons {
+			i->on_destroy()
+			free(i, engine_alloc())
+		}
+		delete(world.daemons)
 		for queue.len(world.events) > 0 {
 			tmp := queue.pop_front(&world.events)
 			destroy_event(tmp)
@@ -208,8 +242,15 @@ init :: proc(use_graphics := true) {
 
 fini :: proc() {
 	unload_world()
+	for name, i in ENGINE.systems {
+		i->on_destroy()
+		free(i, engine_alloc())
+		delete(name, engine_alloc())
+	}
+	delete(ENGINE.systems)
 	mem.dynamic_arena_destroy(&ENGINE.level_arena)
 	mem.dynamic_arena_destroy(&ENGINE.frame_arena)
+
 	if ENGINE.graphics_context != nil {
 		destroy_graphics_context(ENGINE.graphics_context)
 	}
@@ -448,7 +489,16 @@ game_tick :: proc() {
 		}
 	}
 	{
-
+		for _name, i in ENGINE.systems {
+			if i.on_update != nil {
+				i->on_update(delta_time)
+			}
+		}
+		for i in world.daemons {
+			if i.on_update != nil {
+				i->on_update(delta_time)
+			}
+		}
 		for i in entity_list {
 			if i.on_update != nil {
 				i->on_update(delta_time)
@@ -456,6 +506,16 @@ game_tick :: proc() {
 		}
 	}
 	if ENGINE.graphics_context != nil {
+		for _name, i in ENGINE.systems {
+			if i.on_render != nil {
+				i->on_render()
+			}
+		}
+		for i in world.daemons {
+			if i.on_render != nil {
+				i->on_render()
+			}
+		}
 		for i in entity_list {
 			if i.on_render != nil {
 				i->on_render()
@@ -497,6 +557,16 @@ game_tick :: proc() {
 				ev = queue.pop_front(&world.events)
 				tg := get_entity(ev.target)
 				if tg != nil {
+					for _name, i in engine.systems {
+						if i.on_event != nil {
+							i->on_event(ev)
+						}
+					}
+					for i in world.daemons {
+						if i.on_event != nil {
+							i->on_event(ev)
+						}
+					}
 					if tg.on_event != nil {
 						tg->on_event(ev)
 					}
@@ -612,4 +682,18 @@ try_spawn_particle :: proc(this: ^ParticleSystem, particle: Particle) {
 			break
 		}
 	}
+}
+
+attach_camera_to :: proc(et: ^Entity, offset_pos: Vec3, offset_rotation: Quat) {
+	rotation := et.phys.rotation * offset_rotation * et.control_rotation
+	pos := linalg.quaternion256_mul_vector3(rotation, offset_pos) + et.phys.position
+	up := linalg.quaternion256_mul_vector3(rotation, Vec3{0, 0, 1})
+	forward := linalg.quaternion256_mul_vector3(rotation, Vec3{1, 0, 0})
+	camera: raylib.Camera3D
+	camera.fovy = 90.
+	camera.position = cast(Vec3f)pos
+	camera.target = cast(Vec3f)(pos + forward)
+	camera.up = cast(Vec3f)up
+	camera.projection = .PERSPECTIVE
+	set_camera(camera)
 }

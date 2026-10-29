@@ -437,8 +437,11 @@ draw_graphics_objects :: proc(
 ) {
 	dir_loc := raylib.GetShaderLocation(this.shader, "light_direction")
 	//assert(dir_loc != -1)
-	tmp := linalg.normalize(raylib.Vector3{0, 0, -1})
-	raylib.SetShaderValue(this.shader, dir_loc, &tmp, .VEC3)
+	light_col_loc := raylib.GetShaderLocation(this.shader, "light_color")
+	light_direction := linalg.normalize(raylib.Vector3{0, 0, -1})
+	light_color := linalg.normalize(raylib.Vector4{1., 0.99, 0.95, 1.})
+	raylib.SetShaderValue(this.shader, dir_loc, &light_direction, .VEC3)
+	raylib.SetShaderValue(this.shader, light_col_loc, &light_color, .VEC4)
 	rough_loc := raylib.GetShaderLocation(this.shader, "roughness")
 	metal_loc := raylib.GetShaderLocation(this.shader, "metallic")
 	depth_pass_loc := raylib.GetShaderLocation(this.shader, "is_depth_pass")
@@ -588,6 +591,13 @@ draw_graphics_objects :: proc(
 					cast(i32)len(cols),
 				)
 			}
+			{
+				light_color_loc := raylib.GetShaderLocation(this.particle_shader, "light_color")
+				light_direction_loc := raylib.GetShaderLocation(
+					this.particle_shader,
+					"light_direction",
+				)
+			}
 			old_text := this.particle_material.maps[0].texture
 
 			if i.texture in this.textures {
@@ -699,22 +709,14 @@ graphics_step :: proc() {
 		}
 		raylib.BeginDrawing()
 		raylib.ClearBackground(raylib.BLACK)
-		@(static) dbg := false
-		if raylib.IsKeyPressed(.SPACE) {
-			dbg = !dbg
-		}
-		if dbg {
-			raylib.DrawTexture(this.light_depth_buffer.depth, 0, 0, raylib.WHITE)
-		} else {
-			{
-				draw_graphics_objects(
-					this,
-					this.read_command_buffer.objects[:],
-					this.read_command_buffer.camera,
-					light_cam,
-					false,
-				)
-			}
+		{
+			draw_graphics_objects(
+				this,
+				this.read_command_buffer.objects[:],
+				this.read_command_buffer.camera,
+				light_cam,
+				false,
+			)
 		}
 		for layer in 0 ..= max_layer_idx {
 			for i in this.read_command_buffer.commands {
@@ -1027,6 +1029,8 @@ create_default_assets :: proc(this: ^GraphicsContext) {
 		this.meshes[strings.clone("star")] = star_model
 		plane_model := raylib.LoadModelFromMesh(raylib.GenMeshPlane(1., 1., 1, 1))
 		this.meshes[strings.clone("plane")] = plane_model
+		x_wing_model := raylib.LoadModel("x-wing by Alberto Calvo - d6Xadlg51aC.glb")
+		this.meshes[strings.clone("x-wing")] = x_wing_model
 	}
 	{
 
