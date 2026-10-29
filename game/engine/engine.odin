@@ -350,11 +350,17 @@ create_entity :: proc(
 				out_ref.idx = cast(u32)i
 				tmp: ^Entity = cast(^Entity)out
 				tmp._type = T
+				tmp.phys.height = 1.
+				tmp.phys.width = 1.
+				tmp.phys.length = 1.
+				tmp.control_rotation = Quat(1)
+				tmp.phys.mass = 1.
 				tmp.destructor = vtable.destructor
 				tmp.on_event = vtable.on_event
 				tmp.on_render = vtable.on_render
 				tmp.on_update = vtable.on_update
 				tmp.self_ref = out_ref
+				tmp.mesh.offset.rotation = Quat(1)
 				manager.entities[i] = tmp
 				break
 			}
@@ -522,9 +528,9 @@ game_tick :: proc() {
 			}
 		}
 		if !world.camera_set_this_frame {
+			set_camera(world.camera)
 			raylib.UpdateCamera(&world.camera, .FREE)
 		}
-		set_camera(world.camera)
 		for i in entity_list {
 			if i.mesh.name != "" {
 				trs := i.mesh.offset
@@ -685,7 +691,7 @@ try_spawn_particle :: proc(this: ^ParticleSystem, particle: Particle) {
 }
 
 attach_camera_to :: proc(et: ^Entity, offset_pos: Vec3, offset_rotation: Quat) {
-	rotation := et.phys.rotation * offset_rotation * et.control_rotation
+	rotation := et.phys.rotation * et.control_rotation
 	pos := linalg.quaternion256_mul_vector3(rotation, offset_pos) + et.phys.position
 	up := linalg.quaternion256_mul_vector3(rotation, Vec3{0, 0, 1})
 	forward := linalg.quaternion256_mul_vector3(rotation, Vec3{1, 0, 0})
@@ -696,4 +702,5 @@ attach_camera_to :: proc(et: ^Entity, offset_pos: Vec3, offset_rotation: Quat) {
 	camera.up = cast(Vec3f)up
 	camera.projection = .PERSPECTIVE
 	set_camera(camera)
+	ENGINE.world.camera_set_this_frame = true
 }

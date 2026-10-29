@@ -9,7 +9,7 @@ import "game/engine"
 import "vendor:raylib"
 //3,490,216
 Vec3f :: engine.Vec3f
-
+Quat :: engine.Quat
 main :: proc() {
 	track := mem.Tracking_Allocator{}
 	mem.tracking_allocator_init(&track, context.allocator)
@@ -24,7 +24,7 @@ game_main :: proc() {
 	engine.init()
 	defer engine.fini()
 	fmt.printf("MAPS:%d\n", raylib.MAX_MATERIAL_MAPS)
-
+	t, _ := game.create_space_ship({10, 0, 0}, quaternion256(1), true)
 	for i in 0 ..< 100 {
 		_, tmp := engine.create_entity(engine.Entity)
 		sz := 6
@@ -36,9 +36,9 @@ game_main :: proc() {
 			} *
 			1
 		tmp.phys.rotation = Quat(1)
-		tmp.phys.height = 1.
-		tmp.phys.width = 1.
-		tmp.phys.length = 1.
+		tmp.phys.height = 0.5
+		tmp.phys.width = 0.5
+		tmp.phys.length = 0.5
 		tmp.mesh.name = engine.string_clone("cube")
 		tmp.mesh.color = raylib.WHITE
 	}

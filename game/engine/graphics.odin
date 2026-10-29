@@ -509,7 +509,12 @@ draw_graphics_objects :: proc(
 		base_rot := i.transform.rotation
 		pi :: math.PI
 		if i.mesh_id == "cylinder" {
-			base_rot = base_rot * linalg.quaternion_from_euler_angles_f64(0., 00., pi / 2, .XYZ)
+			qt := linalg.quaternion_from_euler_angles_f64(0., 00., pi / 2, .XYZ)
+			base_rot = base_rot * qt
+			ns := scale
+			scale.x = ns.z
+			scale.y = ns.x
+			scale.z = ns.y
 		}
 		msh := &this.meshes[i.mesh_id]
 		trans := raylib.MatrixCompose(pos, cast(raylib.Quaternion)base_rot, scale)
@@ -1029,8 +1034,6 @@ create_default_assets :: proc(this: ^GraphicsContext) {
 		this.meshes[strings.clone("star")] = star_model
 		plane_model := raylib.LoadModelFromMesh(raylib.GenMeshPlane(1., 1., 1, 1))
 		this.meshes[strings.clone("plane")] = plane_model
-		x_wing_model := raylib.LoadModel("x-wing by Alberto Calvo - d6Xadlg51aC.glb")
-		this.meshes[strings.clone("x-wing")] = x_wing_model
 	}
 	{
 

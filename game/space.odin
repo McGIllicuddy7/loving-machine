@@ -1,4 +1,5 @@
 package game
+import "core:math"
 import "core:math/linalg"
 import "core:strings"
 import "engine"
@@ -24,19 +25,24 @@ create_space_ship :: proc(pos: Vec3, rotation: Quat, is_player: bool) -> (Entity
 	ship.is_player = is_player
 	ship.phys.position = pos
 	ship.phys.rotation = rotation
-	ship.phys.width = 1.
-	ship.phys.height = 1.
-	ship.phys.length = 1.
-	ship.mesh.name = string_clone("x-wing")
+	ship.phys.width = 0.5
+	ship.phys.height = 0.5
+	ship.phys.collision_response = .Slide
+	ship.phys.length = 2.
+	ship.mesh.name = string_clone("cylinder")
+	pi := math.PI
 	return rf, ship
 }
 
 ship_on_update :: proc(this: ^Spaceship, dt: f32) {
-
+	if (this.is_player) {
+		engine.handle_movement_input_simple_3d(this, 10., 1., dt)
+		engine.attach_camera_to(this, {-1, 0.0, 0.6}, Quat(1))
+	}
 }
 
 ship_on_render :: proc(this: ^Spaceship) {
-	engine.attach_camera_to(this, {0, 0, 0.5}, Quat(1))
+
 }
 
 ship_destructor :: proc(this: ^Spaceship) {
