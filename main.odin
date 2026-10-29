@@ -4,6 +4,7 @@ import "core:math/linalg"
 import "core:math/rand"
 import "core:mem"
 
+import "core:encoding/cbor"
 import "game"
 import "game/engine"
 import "vendor:raylib"
@@ -23,9 +24,9 @@ main :: proc() {
 game_main :: proc() {
 	engine.init()
 	defer engine.fini()
-	fmt.printf("MAPS:%d\n", raylib.MAX_MATERIAL_MAPS)
+	game.game_setup()
 	t, _ := game.create_space_ship({10, 0, 0}, quaternion256(1), true)
-	for i in 0 ..< 100 {
+	for i in 0 ..< 10 {
 		_, tmp := engine.create_entity(engine.Entity)
 		sz := 6
 		tmp.phys.position =

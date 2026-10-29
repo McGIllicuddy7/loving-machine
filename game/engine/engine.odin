@@ -7,6 +7,7 @@ import "core:math/linalg"
 import "core:mem"
 import "core:strings"
 import "core:sync"
+import "vendor:darwin/Metal"
 
 import "vendor:raylib"
 
@@ -72,40 +73,40 @@ DEFAULT_ENTITY_TABLE: EntityVtable = {}
 	meshes will be rendered automatically, on_render is for custom other rendering,for example ui
 	use engine_alloc() or the provided allocation functions(eg string_clone) for all allocations stored in the entity otherwise REALLLY BAD THINGS
 */
-
+JSON_SKIP :: `json:"-"`
 Daemon :: struct {
-	_type:      typeid,
-	on_update:  #type proc(this: ^Daemon, dt: f32),
-	on_event:   #type proc(this: ^Daemon, event: Event),
-	on_render:  #type proc(this: ^Daemon),
-	on_destroy: #type proc(this: ^Daemon),
+	_type:      (typeid) `cbor:"-"`,
+	on_update:  (#type proc(this: ^Daemon, dt: f32)) `cbor:"-"`,
+	on_event:   (#type proc(this: ^Daemon, event: Event)) `cbor:"-"`,
+	on_render:  (#type proc(this: ^Daemon)) `cbor:"-"`,
+	on_destroy: (#type proc(this: ^Daemon)) `cbor:"-"`,
 }
 
 System :: struct {
-	_type:             typeid,
-	on_update:         #type proc(this: ^System, dt: f32),
-	on_event:          #type proc(this: ^System, event: Event),
-	on_render:         #type proc(this: ^System),
-	on_destroy:        #type proc(this: ^System),
-	on_save:           #type proc(this: ^System, allocator: mem.Allocator) -> string,
-	on_load:           #type proc(this: ^System, data: string),
-	on_level_transfer: #type proc(this: ^System),
+	_type:             (typeid) `cbor:"-"`,
+	on_update:         (#type proc(this: ^System, dt: f32)) `cbor:"-"`,
+	on_event:          (#type proc(this: ^System, event: Event)) `cbor:"-"`,
+	on_render:         (#type proc(this: ^System)) `cbor:"-"`,
+	on_destroy:        (#type proc(this: ^System)) `cbor:"-"`,
+	on_save:           (#type proc(this: ^System, allocator: mem.Allocator) -> string) `cbor:"-"`,
+	on_load:           (#type proc(this: ^System, data: string)) `cbor:"-"`,
+	on_level_transfer: (#type proc(this: ^System)) `cbor:"-"`,
 }
 
 
 Entity :: struct {
-	_type:             typeid,
+	_type:             (typeid) `cbor:"-"`,
 	tags:              bit_set[EntityTag],
 	self_ref:          EntityRef,
 	phys:              PhysicsObject,
 	control_rotation:  Quat,
 	mesh:              EntityMesh,
 	health:            i32,
-	on_update:         #type proc(this: ^Entity, delta_time: f32),
-	on_render:         #type proc(this: ^Entity),
-	on_event:          #type proc(this: ^Entity, event: Event),
-	destructor:        #type proc(this: ^Entity),
-	on_level_transfer: #type proc(this: ^Entity),
+	on_update:         (#type proc(this: ^Entity, delta_time: f32)) `cbor:"-"`,
+	on_render:         (#type proc(this: ^Entity)) `cbor:"-"`,
+	on_event:          (#type proc(this: ^Entity, event: Event)) `cbor:"-"`,
+	destructor:        (#type proc(this: ^Entity)) `cbor:"-"`,
+	on_level_transfer: (#type proc(this: ^Entity)) `cbor:"-"`,
 }
 
 
@@ -144,6 +145,12 @@ _get_world :: proc() -> ^World {
 	return &ENGINE.world
 }
 
+LoaderState :: struct {
+	should_save: bool,
+	should_load: bool,
+	save_path:   string,
+	load_path:   string,
+}
 
 Engine :: struct {
 	level_arena:              mem.Dynamic_Arena,
@@ -155,7 +162,8 @@ Engine :: struct {
 	graphics_context:         ^GraphicsContext,
 	logs:                     Logs,
 	world:                    World,
-	systems:                  map[string]^Daemon,
+	systems:                  map[string]^System,
+	loader_state:             LoaderState,
 }
 
 
@@ -190,7 +198,7 @@ setup_world :: proc() {
 	}
 }
 
-unload_world :: proc() {
+destroy_world :: proc() {
 	{
 		manager := _get_entity_manager()
 		for i in manager.entities {
@@ -207,9 +215,6 @@ unload_world :: proc() {
 		delete(manager.physics_object_list)
 		delete(manager.entity_list)
 		queue.destroy(&manager.to_destroy_list)
-		manager.physics_object_list = {}
-		manager.entity_list = {}
-		manager.to_destroy_list = {}
 	}
 	{
 		world := _get_world()
@@ -226,6 +231,44 @@ unload_world :: proc() {
 	}
 }
 
+unload_world :: proc(world: ^World) {
+	{
+		manager := &world.entities
+		for i in manager.entities {
+			if i != nil {
+				finalize_entity(i)
+			}
+		}
+		for &i in manager.entities {
+			if i != nil {
+				delete_entity_backing_after_finalization(i)
+				i = nil
+			} else {
+				i = nil
+			}
+		}
+		for &i in manager.generations {
+			i = 0
+		}
+		clear(&manager.physics_object_list)
+		clear(&manager.entity_list)
+		queue.clear(&manager.to_destroy_list)
+	}
+	{
+		world := _get_world()
+		for i in world.daemons {
+			i->on_destroy()
+			free(i, engine_alloc())
+		}
+		clear(&world.daemons)
+		for queue.len(world.events) > 0 {
+			tmp := queue.pop_front(&world.events)
+			destroy_event(tmp)
+		}
+		queue.clear(&world.events)
+	}
+}
+
 init :: proc(use_graphics := true) {
 	mem.mutex_allocator_init(&ENGINE.engine_backing_allocator, context.allocator)
 	ENGINE.engine_allocator = mem.mutex_allocator(&ENGINE.engine_backing_allocator)
@@ -237,20 +280,19 @@ init :: proc(use_graphics := true) {
 		ENGINE.graphics_context = create_graphics_context()
 	}
 	setup_world()
+	register_entity_class(Entity, nil, nil, nil, nil, nil, nil)
 }
 
 
 fini :: proc() {
-	unload_world()
+	destroy_world()
 	for name, i in ENGINE.systems {
 		i->on_destroy()
 		free(i, engine_alloc())
-		delete(name, engine_alloc())
 	}
 	delete(ENGINE.systems)
 	mem.dynamic_arena_destroy(&ENGINE.level_arena)
 	mem.dynamic_arena_destroy(&ENGINE.frame_arena)
-
 	if ENGINE.graphics_context != nil {
 		destroy_graphics_context(ENGINE.graphics_context)
 	}
@@ -258,6 +300,8 @@ fini :: proc() {
 		delete(i.content)
 	}
 	delete(ENGINE.logs.values)
+	delete(RTTI.daemon_classes)
+	delete(RTTI.entity_classes)
 }
 
 fsprintf :: proc(fmtr: string, args: ..any) -> string {
@@ -293,15 +337,9 @@ engine_alloc :: proc() -> mem.Allocator {
 }
 
 destroy_mesh :: proc(msh: ^EntityMesh) {
-	if msh.name != "" {
-		string_free(msh.name)
-	}
-	if msh.diffuse_map_name != "" {
-		string_free(msh.diffuse_map_name)
-	}
-	if msh.normal_map_name != "" {
-		string_free(msh.normal_map_name)
-	}
+	string_free(msh.name)
+	string_free(msh.diffuse_map_name)
+	string_free(msh.normal_map_name)
 }
 
 string_clone :: proc(s: string) -> string {
@@ -461,6 +499,7 @@ broadcast_event :: proc(ev: Event) {
 
 game_tick :: proc() {
 	engine := &ENGINE
+	engine.loader_state = {}
 	world := _get_world()
 	world.camera_set_this_frame = false
 	mem.dynamic_arena_free_all(&engine.frame_arena)
@@ -581,6 +620,7 @@ game_tick :: proc() {
 		}
 	}
 	frame_destroy_entities()
+	handle_loading()
 }
 
 
@@ -703,4 +743,13 @@ attach_camera_to :: proc(et: ^Entity, offset_pos: Vec3, offset_rotation: Quat) {
 	camera.projection = .PERSPECTIVE
 	set_camera(camera)
 	ENGINE.world.camera_set_this_frame = true
+}
+
+register_system :: proc(name: string, system: ^System) {
+	assert(name not_in ENGINE.systems)
+	ENGINE.systems[name] = system
+}
+
+register_daemon :: proc(daemon: ^Daemon) {
+	append(&_get_world().daemons, daemon)
 }

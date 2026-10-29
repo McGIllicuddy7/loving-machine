@@ -48,3 +48,9 @@ ship_on_render :: proc(this: ^Spaceship) {
 ship_destructor :: proc(this: ^Spaceship) {
 
 }
+
+ship_on_event :: proc(this: ^Spaceship, ev: engine.Event) {
+
+}
+
+ship_on_level_transfer :: proc(this: ^Spaceship) {}
