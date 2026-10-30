@@ -26,7 +26,7 @@ game_main :: proc() {
 	defer engine.fini()
 	game.game_setup()
 	t, _ := game.create_space_ship({10, 0, 0}, quaternion256(1), true)
-	for i in 0 ..< 10 {
+	for i in 0 ..< 1000 {
 		_, tmp := engine.create_entity(engine.Entity)
 		sz := 6
 		tmp.phys.position =

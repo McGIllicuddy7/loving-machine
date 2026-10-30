@@ -39,6 +39,7 @@ MeshSpawnData :: struct {
 
 DaemonSpawnData :: struct {
 	name: string,
+	data: string,
 }
 
 SystemInputData :: struct {
@@ -47,7 +48,8 @@ SystemInputData :: struct {
 }
 
 LevelData :: struct {
-	player_spawn:      Transform,
+	player_class:      string,
+	player_spawns:     []Transform,
 	entity_spawn_data: []EntitySpawnData,
 	mesh_spawn_data:   []MeshSpawnData,
 	daemon_spawn_data: []DaemonSpawnData,
@@ -334,4 +336,84 @@ handle_loading :: proc() {
 	if ENGINE.loader_state.should_load {
 		_load_game_impl(ENGINE.loader_state.load_path)
 	}
+}
+
+transfer_level :: proc(level: LevelData) {
+	ENGINE.loader_state.transfer_data = level
+	ENGINE.loader_state.should_transfer = true
+}
+
+_transfer_level_impl :: proc(data: LevelData) {
+	saved := make([dynamic]^Entity)
+	defer delete(saved)
+	world := _get_world()
+	for &i in world.entities.entities {
+		if .ShouldTransferLevel in i.tags {
+			append(&saved, i)
+			i = nil
+		}
+	}
+	for i in saved {
+		if i.on_level_transfer != nil {
+			i->on_level_transfer()
+		}
+	}
+	unload_world(world)
+	for i in data.daemon_spawn_data {
+		if i.name in RTTI.daemon_classes {
+			if RTTI.daemon_classes[i.name].create != nil {
+				tmp := RTTI.daemon_classes[i.name].create(i.data)
+				register_daemon(tmp)
+			} else {
+				fmt.printf(
+					"ERROR:attempt to spawn daemon class:%s with data:%s does not have creation api(registered create procedure)\n",
+					i.name,
+					i.data,
+				)
+			}
+		} else {
+			fmt.printf(
+				"ERROR:attempt to spawn daemon class:%s with data:%s does not exist\n",
+				i.name,
+				i.data,
+			)
+		}
+	}
+	for i in data.entity_spawn_data {
+		if i.class in RTTI.entity_classes {
+			if RTTI.entity_classes[i.class].create_at_location != nil {
+				v := RTTI.entity_classes[i.class].create_at_location(i.transform, i.custom_data)
+				_unsafe_create_entity_by_pointer(v)
+			} else {
+				fmt.printf(
+					"ERROR:attempt to spawn daemon class:%s with transform:%v data:%s does not have creation api(registered create procedure)\n",
+					i.class,
+					i.transform,
+					i.custom_data,
+				)
+			}
+		} else {
+			fmt.printf(
+				"ERROR:attempt to spawn daemon class:%s with transform:%v data:%s does not exist\n",
+				i.class,
+				i.transform,
+				i.custom_data,
+			)
+		}
+	}
+	for i in data.mesh_spawn_data {
+		spawn_mesh(i)
+	}
+}
+
+spawn_mesh :: proc(data: MeshSpawnData) {
+	rf, et := create_entity(Entity)
+	et.control_rotation = Quat(1)
+	et.mesh = clone_mesh(data.mesh, engine_alloc())
+	et.health = 1
+	et.phys.trans = data.transform
+	et.phys.is_static = true
+	et.phys.length = data.mesh.length
+	et.phys.width = data.mesh.width
+	et.phys.height = data.mesh.height
 }

@@ -35,6 +35,7 @@ Event :: struct {
 
 EntityTag :: enum {
 	Intangible,
+	ShouldTransferLevel,
 }
 
 Vec3f :: raylib.Vector3
@@ -146,10 +147,12 @@ _get_world :: proc() -> ^World {
 }
 
 LoaderState :: struct {
-	should_save: bool,
-	should_load: bool,
-	save_path:   string,
-	load_path:   string,
+	should_save:     bool,
+	should_load:     bool,
+	save_path:       string,
+	load_path:       string,
+	should_transfer: bool,
+	transfer_data:   LevelData,
 }
 
 Engine :: struct {
@@ -281,6 +284,14 @@ init :: proc(use_graphics := true) {
 	}
 	setup_world()
 	register_entity_class(Entity, nil, nil, nil, nil, nil, nil)
+	register_entity_class(
+		ParticleSystem,
+		particle_system_on_update,
+		particle_system_on_render,
+		nil,
+		particle_system_destructor,
+		nil,
+	)
 }
 
 
@@ -752,4 +763,34 @@ register_system :: proc(name: string, system: ^System) {
 
 register_daemon :: proc(daemon: ^Daemon) {
 	append(&_get_world().daemons, daemon)
+}
+
+_unsafe_create_entity_by_pointer :: proc(entity: ^Entity) -> EntityRef {
+	manager := _get_entity_manager()
+	sync.lock(&manager.alloc_lock)
+	defer sync.unlock(&manager.alloc_lock)
+	for i in 0 ..< len(manager.entities) {
+		if manager.entities[i] == nil {
+			manager.entities[i] = entity
+			manager.generations[i] += 1
+			out: EntityRef = {cast(u32)i, manager.generations[i]}
+			entity.self_ref = out
+			return out
+		}
+	}
+	return {}
+}
+
+clone_mesh :: proc(msh: EntityMesh, allocator: mem.Allocator) -> EntityMesh {
+	out: EntityMesh
+	out.name = strings.clone(msh.name, allocator)
+	out.diffuse_map_name = strings.clone(msh.diffuse_map_name, allocator)
+	out.normal_map_name = strings.clone(msh.normal_map_name, allocator)
+	out.color = msh.color
+	out.offset = msh.offset
+	out.use_custom_dimensions = msh.use_custom_dimensions
+	out.length = msh.length
+	out.width = msh.width
+	out.height = msh.height
+	return out
 }
