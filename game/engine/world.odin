@@ -404,6 +404,10 @@ _transfer_level_impl :: proc(data: LevelData) {
 	for i in data.mesh_spawn_data {
 		spawn_mesh(i)
 	}
+	for i, idx in saved {
+		_unsafe_create_entity_by_pointer(i)
+		i.phys.trans = data.player_spawns[idx]
+	}
 }
 
 spawn_mesh :: proc(data: MeshSpawnData) {

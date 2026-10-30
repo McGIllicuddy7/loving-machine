@@ -41,6 +41,8 @@ game_main :: proc() {
 		tmp.phys.width = 0.5
 		tmp.phys.length = 0.5
 		tmp.mesh.name = engine.string_clone("cube")
+		tmp.mesh.diffuse_map_name = engine.string_clone("metal_diffuse.png")
+		tmp.mesh.normal_map_name = engine.string_clone("metal_normal.png")
 		tmp.mesh.color = raylib.WHITE
 	}
 	for !raylib.WindowShouldClose() {

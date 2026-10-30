@@ -12,7 +12,6 @@ uniform vec3 light_direction;
 
 uniform vec3 light_color;
 uniform vec4 colors[1000];
-
 // Output fragment color
 out vec4 finalColor;
 

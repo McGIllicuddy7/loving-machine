@@ -5,6 +5,7 @@ import "core:math/linalg"
 import "core:math/rand"
 import "core:mem"
 import "core:slice"
+import "core:sort"
 import "core:strings"
 import "core:sync"
 import "vendor:raylib"
@@ -20,6 +21,7 @@ GraphicsObject :: struct {
 	mesh_roughness: f32,
 	mesh_metallic:  f32,
 	tint:           raylib.Color,
+	emmisive_color: raylib.Color,
 }
 
 @(private = "file")
@@ -172,6 +174,8 @@ GraphicsContext :: struct {
 	light_depth_buffer:   raylib.RenderTexture2D,
 	base_diffuse_map:     raylib.RenderTexture2D,
 	base_normal_map:      raylib.RenderTexture2D,
+	target_texture:       raylib.RenderTexture2D,
+	post_process_shader:  raylib.Shader,
 	font:                 raylib.Font,
 	shader:               raylib.Shader,
 	material:             raylib.Material,
@@ -238,7 +242,7 @@ graphics_register_texture :: proc(name: string, texture: raylib.Texture2D) {
 graphics_ensure_mesh_registered :: proc(name: string) {
 	this := get_graphics_context()
 	if !(name in this.meshes) {
-		path := fmt.ctprintf("assets/%s\n", name)
+		path := fmt.ctprintf("assets/%s", name)
 		md := raylib.LoadModel(path)
 		name := strings.clone(name)
 		this.meshes[name] = md
@@ -249,7 +253,7 @@ graphics_ensure_mesh_registered :: proc(name: string) {
 graphics_ensure_texture_registered :: proc(name: string) {
 	this := get_graphics_context()
 	if !(name in this.textures) {
-		path := fmt.ctprintf("assets/%s\n", name)
+		path := fmt.ctprintf("assets/%s", name)
 		md := raylib.LoadTexture(path)
 		name := strings.clone(name)
 		this.textures[name] = md
@@ -428,6 +432,20 @@ set_camera :: proc(camera: raylib.Camera3D) {
 	get_graphics_context().write_command_buffer.camera = camera
 }
 
+billboard_rotation :: proc(camera: raylib.Camera3D) -> (rot: raylib.Quaternion) {
+	base_rot := linalg.matrix3_from_quaternion(
+		linalg.quaternion_from_euler_angle_x_f32(-math.PI / 2),
+	)
+	cam_rot := linalg.matrix3_from_quaternion(
+		linalg.quaternion_from_forward_and_up(
+			-linalg.normalize(camera.target - camera.position),
+			linalg.normalize(camera.up),
+		),
+	)
+	rot = linalg.quaternion_from_matrix3_f32(cam_rot * base_rot)
+	return
+}
+
 draw_graphics_objects :: proc(
 	this: ^GraphicsContext,
 	meshes: []GraphicsObject,
@@ -463,6 +481,7 @@ draw_graphics_objects :: proc(
 
 	}
 	diffuse_col_loc := raylib.GetShaderLocation(this.shader, "colDiffuse")
+	emmsive_col_loc := raylib.GetShaderLocation(this.shader, "colEmmisive")
 	raylib.BeginMode3D(camera)
 	rlgl.SetClipPlanes(0.01, 1000.)
 	if !depth_pass && this.sky_box.star_count > 0 {
@@ -483,6 +502,9 @@ draw_graphics_objects :: proc(
 		{
 			loc := raylib.GetShaderLocation(this.particle_shader, "colors")
 			raylib.SetShaderValueV(this.particle_shader, loc, &cols[0], .VEC4, cast(i32)len(cols))
+			is_int := raylib.GetShaderLocation(this.particle_material.shader, "is_instanced")
+			t0: i32 = 1
+			raylib.SetShaderValue(this.particle_material.shader, is_int, &t0, .INT)
 		}
 		raylib.DrawMeshInstanced(
 			this.meshes["star"].meshes[0],
@@ -538,6 +560,8 @@ draw_graphics_objects :: proc(
 			}
 			raylib.SetShaderValue(this.shader, rough_loc, &i.mesh_roughness, .FLOAT)
 			raylib.SetShaderValue(this.shader, metal_loc, &i.mesh_metallic, .FLOAT)
+			col_em: [3]f32 = cast([3]f32)(i.emmisive_color.rgb) / 255.
+			raylib.SetShaderValue(this.shader, emmsive_col_loc, &col_em, .VEC3)
 		}
 		for j in 0 ..< msh.meshCount {
 			cur := msh.meshes[j]
@@ -568,22 +592,34 @@ draw_graphics_objects :: proc(
 			defer delete(trans)
 			cols := make_slice([][4]f32, len(i.particles))
 			defer delete(cols)
-			for j, idx in i.particles {
+			tmp := make_slice([]Particle, len(i.particles))
+			defer delete(tmp)
+			for j in 0 ..< len(i.particles) {
+				tmp[j] = i.particles[j]
+			}
+			cam_loc := camera.position
+			old_ptr := context.user_ptr
+			defer context.user_ptr = old_ptr
+			context.user_ptr = &cam_loc
+			sort.quick_sort_proc(tmp, proc(x: Particle, y: Particle) -> int {
+				loc := (cast(^Vec3f)context.user_ptr)^
+				d1 := linalg.distance(x.position, loc)
+				d2 := linalg.distance(y.position, loc)
+				if d1 < d2 {
+					return 1
+				} else if d1 == d2 {
+					return 0
+				} else {
+					return -1
+				}
+			})
+			for j, idx in tmp {
 				cols[idx] = cast([4]f32)j.tint / 255.
 				rot: quaternion128 = quaternion128(1)
 				if i.billboards {
-					base_rot := linalg.matrix3_from_quaternion(
-						linalg.quaternion_from_euler_angle_x_f32(-math.PI / 2),
-					)
-					cam_rot := linalg.matrix3_from_quaternion(
-						linalg.quaternion_from_forward_and_up(
-							-linalg.normalize(camera.target - camera.position),
-							linalg.normalize(camera.up),
-						),
-					)
-					rot = linalg.quaternion_from_matrix3_f32(cam_rot * base_rot)
+					rot = billboard_rotation(camera)
 				} else {
-					//rot = j.rotation
+					rot = j.rotation
 				}
 				trans[idx] = raylib.MatrixCompose(j.position, rot, j.scale)
 			}
@@ -604,7 +640,6 @@ draw_graphics_objects :: proc(
 				)
 			}
 			old_text := this.particle_material.maps[0].texture
-
 			if i.texture in this.textures {
 				this.particle_material.maps[0].texture = this.textures[i.texture]
 			} else {
@@ -671,6 +706,14 @@ graphics_step :: proc() {
 		}
 	}
 	{
+		for i in this.read_command_buffer.objects {
+			ensure_texture_loaded(i.mesh_diffuse)
+			ensure_texture_loaded(i.mesh_normal)
+			ensure_model_loaded(i.mesh_id)
+		}
+	}
+
+	{
 
 		light_dir := this.read_command_buffer.light_direction
 		light_cam: raylib.Camera3D
@@ -712,7 +755,7 @@ graphics_step :: proc() {
 			)
 			raylib.EndTextureMode()
 		}
-		raylib.BeginDrawing()
+		raylib.BeginTextureMode(this.target_texture)
 		raylib.ClearBackground(raylib.BLACK)
 		{
 			draw_graphics_objects(
@@ -805,6 +848,29 @@ graphics_step :: proc() {
 				}
 			}
 		}
+		raylib.EndTextureMode()
+		raylib.BeginDrawing()
+		raylib.ClearBackground(raylib.BLACK)
+		raylib.BeginShaderMode(this.post_process_shader)
+		raylib.DrawTexturePro(
+			this.target_texture.texture,
+			{
+				0,
+				0,
+				cast(f32)this.target_texture.texture.width,
+				-cast(f32)this.target_texture.texture.height,
+			},
+			{
+				0,
+				0,
+				cast(f32)this.target_texture.texture.width,
+				cast(f32)this.target_texture.texture.height,
+			},
+			{},
+			0.,
+			raylib.WHITE,
+		)
+		raylib.EndShaderMode()
 		render_logs()
 		raylib.EndDrawing()
 		update_logs()
@@ -878,7 +944,7 @@ create_graphics_context :: proc() -> ^GraphicsContext {
 		#assert(STAR_COUNT < MAX_STAR_COUNT)
 		out.sky_box.star_count = STAR_COUNT
 		out.sky_box.sun_pos = {0, 50, 900}
-		out.sky_box.sun_rad = 100
+		out.sky_box.sun_rad = 40
 		out.sky_box.sun_color = raylib.WHITE
 		out.sky_box.star_color = {250, 250, 255, 255}
 		out.sky_box.sky_color = {0, 0, 50, 255}
@@ -905,6 +971,13 @@ create_graphics_context :: proc() -> ^GraphicsContext {
 		out.particle_material = raylib.LoadMaterialDefault()
 		out.particle_shader = raylib.LoadShader("instance.vert", "instance.frag")
 		out.particle_material.shader = out.particle_shader
+	}; {
+		out.target_texture = raylib.LoadRenderTexture(
+			raylib.GetScreenWidth(),
+			raylib.GetScreenHeight(),
+		)
+		out.post_process_shader = raylib.LoadShader(nil, "post_process.frag")
+		setup_palette(out.post_process_shader)
 	}
 	out.shader = raylib.LoadShader("main.vert", "main.frag")
 	out.base_mat = raylib.LoadMaterialDefault()
@@ -914,6 +987,7 @@ create_graphics_context :: proc() -> ^GraphicsContext {
 	out.write_command_buffer = create_command_buffer()
 	out.read_command_buffer = create_command_buffer()
 	create_default_assets(out)
+
 	return out
 }
 
@@ -963,6 +1037,8 @@ destroy_graphics_context :: proc(this: ^GraphicsContext) {
 	delete(this.textures)
 	raylib.UnloadFont(this.font)
 	raylib.UnloadShader(this.shader)
+	raylib.UnloadRenderTexture(this.target_texture)
+	raylib.UnloadShader(this.post_process_shader)
 	destroy_cmd_buffer(this.read_command_buffer)
 	destroy_cmd_buffer(this.write_command_buffer)
 	free(this)
@@ -1050,4 +1126,54 @@ create_default_assets :: proc(this: ^GraphicsContext) {
 			this.textures[strings.clone("square")] = raylib.LoadTextureFromImage(img)
 		}
 	}
+}
+
+setup_palette :: proc(shader: raylib.Shader) {
+	hues: [256]raylib.Color
+	output: [256][4]f32
+	idx := 0
+	//saturation =0
+	//8
+	idx2 := 0
+	for i in 0 ..< 16 {
+		hues[idx] = raylib.ColorFromHSV(0, 0, cast(f32)i / 16)
+		idx += 1
+		idx2 += 1
+	}
+	idx2 = 0
+	//saturation = 0.5
+	//7 * 16
+	for i in 1 ..< 7 {
+		for j in 0 ..< 16 {
+			hues[idx] = raylib.ColorFromHSV(cast(f32)(j * 360) / 16., 0.5, cast(f32)i / 6)
+			idx += 1
+			idx2 += 1
+		}
+	}
+	//saturation = 0.8
+	idx2 = 0
+	for i in 1 ..< 7 {
+		for j in 0 ..< 16 {
+			hues[idx] = raylib.ColorFromHSV(cast(f32)(j * 360) / 16., 0.8, cast(f32)i / 6)
+			idx += 1
+			idx2 += 1
+		}
+	}
+	idx2 = 0
+	//saturation = 1.
+	for i in 1 ..< 4 {
+		for j in 0 ..< 16 {
+			hues[idx] = raylib.ColorFromHSV(cast(f32)(j * 360) / 16., 1., cast(f32)(i + 3) / 6)
+			idx += 1
+			idx2 += 1
+		}
+	}
+	assert(idx == 256)
+	for i in 0 ..< 256 {
+		output[i] = cast([4]f32)hues[i] / 255.
+	}
+	fmt.printf("palette:%v\n", hues)
+	fmt.printf("palette float:%v\n", output)
+	loc := raylib.GetShaderLocation(shader, "palette")
+	raylib.SetShaderValueV(shader, loc, &output[0], .VEC4, 256)
 }

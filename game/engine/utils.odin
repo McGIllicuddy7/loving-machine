@@ -135,3 +135,57 @@ handle_movement_input_simple_3d :: proc(
 	input.rotation_input *= angular_velocity_mul
 	execute_movement_input_simple_3d(this, input, dt)
 }
+
+spawn_explosion :: proc(pos: Vec3, radius: f64) {
+	spawn_particle_system(
+		pos,
+		{},
+		radius,
+		.Addititve,
+		true,
+		texture = "circle",
+		drag = 0.8,
+		spawn_func = proc(pos: Vec3f, dir: Vec3f, radius: f32, input: ^[dynamic]Particle) {
+			for i in 0 ..< 1000 {
+				part: Particle
+				p := random_vec3f_n() * 0.0
+				part.position = p + pos
+				part.velocity = random_vec3f() * radius * 0.25
+				part.remaining_lifetime = rand.float64() * 0.1
+				part.tint = cast(raylib.Color)math.lerp(
+					cast([4]f32)raylib.RED,
+					cast([4]f32)raylib.ORANGE,
+					rand.float32(),
+				)
+				part.scale = {0.025, 0.025, 0.025} * radius
+				append(input, part)
+			}
+		},
+	)
+
+	spawn_particle_system(
+		pos,
+		{},
+		radius,
+		.Alpha,
+		true,
+		texture = "circle",
+		drag = 0.8,
+		spawn_func = proc(pos: Vec3f, dir: Vec3f, radius: f32, input: ^[dynamic]Particle) {
+			for i in 0 ..< 500 {
+				part: Particle
+				p := random_vec3f_n() * 0.0
+				part.position = p + pos
+				part.velocity = random_vec3f() * radius * 0.1
+				part.remaining_lifetime = rand.float64() * 4
+				part.tint = cast(raylib.Color)math.lerp(
+					cast([4]f32)raylib.BLACK,
+					cast([4]f32)raylib.GRAY,
+					rand.float32(),
+				)
+				part.scale = {0.05, 0.05, 0.05} * radius
+				append(input, part)
+			}
+		},
+	)
+}

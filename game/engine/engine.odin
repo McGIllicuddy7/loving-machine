@@ -45,6 +45,7 @@ EntityMesh :: struct {
 	diffuse_map_name:      string,
 	normal_map_name:       string,
 	color:                 raylib.Color,
+	emmisive_color:        raylib.Color,
 	offset:                Transform,
 	use_custom_dimensions: bool,
 	length:                f64,
@@ -594,7 +595,14 @@ game_tick :: proc() {
 				if i.mesh.use_custom_dimensions {
 					dims = {i.mesh.length, i.mesh.width, i.mesh.height}
 				}
-				bind_model(i.mesh.name, trs, dims, i.mesh.color)
+				bind_model(
+					i.mesh.name,
+					trs,
+					dims,
+					i.mesh.color,
+					i.mesh.diffuse_map_name,
+					i.mesh.normal_map_name,
+				)
 			}
 		}
 		graphics_step()
@@ -650,13 +658,15 @@ ParticleSystem :: struct {
 spawn_particle_system :: proc(
 	center: Vec3,
 	direction: Vec3,
+	radius: f64,
 	mode: DrawingMode,
 	is_billboard: bool = false,
 	mesh: string = "sphere",
 	texture: string = "",
-	spawn_func: proc(center: Vec3f, direction: Vec3f, initial: ^[dynamic]Particle),
+	spawn_func: proc(center: Vec3f, direction: Vec3f, radius: f32, initial: ^[dynamic]Particle),
 	post_update_func: proc(this: ^ParticleSystem, dt: f32) -> (should_destroy: bool) = nil,
 	check_post_update_func_to_destroy := false,
+	drag: f32 = 0.5,
 ) -> (
 	EntityRef,
 	^ParticleSystem,
@@ -668,8 +678,8 @@ spawn_particle_system :: proc(
 	rf, ptr := create_entity(ParticleSystem, vtable)
 	inital_set := make([dynamic]Particle)
 	defer delete(inital_set)
-	spawn_func(cast(Vec3f)center, cast(Vec3f)direction, &inital_set)
-	assert(len(inital_set) > 0 && len(inital_set) <= 4096)
+	spawn_func(cast(Vec3f)center, cast(Vec3f)direction, cast(f32)radius, &inital_set)
+	assert(len(inital_set) > 0 && len(inital_set) <= 1000)
 	ptr.system.particles = make_soa_slice(#soa[]Particle, len(inital_set), engine_alloc())
 	ptr.tags |= {.Intangible}
 	for i, idx in inital_set {
@@ -677,7 +687,7 @@ spawn_particle_system :: proc(
 	}
 	ptr.system.mode = mode
 	ptr.system.mesh_name = string_clone(mesh)
-	ptr.system.drag = 0.5
+	ptr.system.drag = drag
 	ptr.system.texture = string_clone(texture)
 	ptr.system.billboards = is_billboard
 	ptr.post_update_func = post_update_func
@@ -793,4 +803,62 @@ clone_mesh :: proc(msh: EntityMesh, allocator: mem.Allocator) -> EntityMesh {
 	out.width = msh.width
 	out.height = msh.height
 	return out
+}
+
+RaycastResult :: struct {
+	hit_entity:   EntityRef,
+	hit_location: Vec3,
+	hit_normal:   Vec3,
+}
+raycast :: proc(
+	start: Vec3,
+	direction: Vec3,
+	distance: f64,
+	ignored: []EntityRef,
+) -> (
+	rs: RaycastResult,
+	hit: bool,
+) {
+	min_dist: f64 = 0.
+	for i in get_all_entities() {
+		thit := false
+		if .Intangible in i.tags {
+			continue
+		}
+		for j in ignored {
+			if j == i.self_ref {
+				thit = true
+				break
+			}
+		}
+		if thit {
+			continue
+		}
+		bhit, pos, norm := raycast_against_object(start, direction, distance, i.phys)
+		if bhit {
+			dist := linalg.distance(start, pos)
+			if dist < min_dist || !hit {
+				min_dist = dist
+				hit = true
+				rs.hit_entity = i.self_ref
+				rs.hit_location = pos
+				rs.hit_normal = norm
+			}
+		}
+	}
+	return
+}
+
+get_forward_vector :: proc(this: ^Entity) -> Vec3 {
+	return linalg.quaternion256_mul_vector3(this.phys.rotation, Vec3{1, 0, 0})
+}
+
+
+get_left_vector :: proc(this: ^Entity) -> Vec3 {
+	return linalg.quaternion256_mul_vector3(this.phys.rotation, Vec3{0, 1, 0})
+}
+
+
+get_up_vector :: proc(this: ^Entity) -> Vec3 {
+	return linalg.quaternion256_mul_vector3(this.phys.rotation, Vec3{0, 0, 1})
 }

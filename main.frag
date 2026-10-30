@@ -15,6 +15,7 @@ uniform sampler2D texture2;//2 light_depth
 //uniform float roughness; 
 //uniform float metallic;
 uniform vec4 colDiffuse;
+uniform vec3 colEmissive;
 uniform vec3 light_direction;
 uniform int is_depth_pass;
 uniform vec3 light_pos;
@@ -80,7 +81,7 @@ vec3 light_reflected(vec3 incoming){
     vec3 norm_base = texture(texture1, fragTexCoord).rgb;
     vec3 norm = normalize(norm_base.x* fragTangent+norm_base.y * cross(fragTangent, fragNormal)+ norm_base.z*fragNormal);
     float dt = clamp(dot(norm,-light_direction),0,1);
-    incoming = (incoming*0.9)*dt+light_color.rgb*0.1;
+    incoming = (incoming*0.75)*dt+light_color.rgb*0.25;
     vec3 color = incoming* base_color.rgb;
     return color;
 }
@@ -90,7 +91,7 @@ void ordinary_pass(){
     vec4 base_color = texelColor*colDiffuse*fragColor; 
     float alpha = base_color.a;
     vec3 incoming = calculate_incoming_light(fragPosition);
-    finalColor.rgb = light_reflected(incoming);
+    finalColor.rgb = light_reflected(incoming)+colEmissive;
     finalColor.a = alpha;
 
 }

@@ -5,6 +5,7 @@ import "engine"
 import "vendor:raylib"
 GameClass :: struct {
 	using system_base: engine.System,
+	timer:             int,
 }
 
 init_game_class_system :: proc() {
