@@ -131,6 +131,7 @@ register_entity_class :: proc(
 	class.on_update = on_update
 	class.on_render = on_render
 	class.on_event = on_event
+	class.destructor = destructor
 	class.on_level_transfer = on_level_transfer
 	class.id = type
 	class.deserialize = deserialize_entity_proc(type)
@@ -303,6 +304,7 @@ load_game_state :: proc(world: ^World, state: SaveStateBlob) {
 }
 
 _save_game_impl :: proc(path: string) {
+	fmt.printf("saving game state\n")
 	state := save_game_state(_get_world(), frame_alloc())
 	jsn, err := cbor.marshal(state, allocator = frame_alloc())
 	assert(err == nil)
@@ -311,12 +313,14 @@ _save_game_impl :: proc(path: string) {
 }
 
 _load_game_impl :: proc(path: string) {
+	fmt.printf("loading game state\n")
 	base, err := os.read_entire_file(path, frame_alloc())
 	assert(err == nil)
 	blob: SaveStateBlob
 	err2 := cbor.unmarshal(base, &blob, allocator = frame_alloc())
 	assert(err2 == nil)
 	load_game_state(_get_world(), blob)
+	fmt.printf("loaded game state\n")
 }
 
 save_game :: proc(path: string) {

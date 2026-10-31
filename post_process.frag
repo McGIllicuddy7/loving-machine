@@ -13,7 +13,10 @@ out vec4 finalColor;
 
 // NOTE: Add your custom variables here
 float b_dist_square(vec4 a, vec4 b){
-    return distance(a.rgb, b.rgb);
+    float dr = (a.r-b.r);
+    float dg = (a.g-b.g);
+    float db =(a.b-b.b);
+    return dr*dr+dg*dg+db*db;
 }
 
 void main()

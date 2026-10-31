@@ -237,7 +237,7 @@ destroy_world :: proc() {
 
 unload_world :: proc(world: ^World) {
 	{
-		manager := &world.entities
+		manager := _get_entity_manager()
 		for i in manager.entities {
 			if i != nil {
 				finalize_entity(i)
@@ -644,15 +644,8 @@ game_tick :: proc() {
 
 
 ParticleSystem :: struct {
-	using _parent:                            Entity,
-	system:                                   GraphicsParticleSystem,
-	post_update_func:                         proc(
-		this: ^ParticleSystem,
-		dt: f32,
-	) -> (
-		should_destroy: bool,
-	),
-	on_use_post_update_func_to_check_destroy: bool,
+	using _parent: Entity,
+	system:        GraphicsParticleSystem,
 }
 
 spawn_particle_system :: proc(
@@ -664,8 +657,6 @@ spawn_particle_system :: proc(
 	mesh: string = "sphere",
 	texture: string = "",
 	spawn_func: proc(center: Vec3f, direction: Vec3f, radius: f32, initial: ^[dynamic]Particle),
-	post_update_func: proc(this: ^ParticleSystem, dt: f32) -> (should_destroy: bool) = nil,
-	check_post_update_func_to_destroy := false,
 	drag: f32 = 0.5,
 ) -> (
 	EntityRef,
@@ -680,7 +671,7 @@ spawn_particle_system :: proc(
 	defer delete(inital_set)
 	spawn_func(cast(Vec3f)center, cast(Vec3f)direction, cast(f32)radius, &inital_set)
 	assert(len(inital_set) > 0 && len(inital_set) <= 1000)
-	ptr.system.particles = make_soa_slice(#soa[]Particle, len(inital_set), engine_alloc())
+	ptr.system.particles = make_slice([]Particle, len(inital_set), engine_alloc())
 	ptr.tags |= {.Intangible}
 	for i, idx in inital_set {
 		ptr.system.particles[idx] = i
@@ -690,8 +681,6 @@ spawn_particle_system :: proc(
 	ptr.system.drag = drag
 	ptr.system.texture = string_clone(texture)
 	ptr.system.billboards = is_billboard
-	ptr.post_update_func = post_update_func
-	ptr.on_use_post_update_func_to_check_destroy = check_post_update_func_to_destroy
 	return rf, ptr
 }
 
@@ -699,6 +688,14 @@ particle_system_on_render :: proc(this: ^ParticleSystem) {
 	bind_particle_system(this.system)
 }
 
+@(fast_math = {
+	.Allow_Reassoc,
+	.No_NaNs,
+	.No_Infs,
+	.No_Signed_Zeros,
+	.Allow_Reciprocal,
+	.Allow_Contract,
+})
 particle_system_on_update :: proc(this: ^ParticleSystem, dt: f32) {
 	living_particles := false
 	drag := this.system.drag
@@ -710,35 +707,17 @@ particle_system_on_update :: proc(this: ^ParticleSystem, dt: f32) {
 			living_particles = true
 		}
 	}
-	thinks_should_exit := false
-	if this.post_update_func != nil {
-		thinks_should_exit = this->post_update_func(dt)
-	} else {
-		if !living_particles {
-			destroy_entity(this.self_ref)
-			return
-		}
-	}
-	if this.on_use_post_update_func_to_check_destroy {
-		if thinks_should_exit {
-			destroy_entity(this.self_ref)
-			return
-		}
-	} else {
-		if thinks_should_exit || (!living_particles) {
-			destroy_entity(this.self_ref)
-			return
-		}
+
+	if !living_particles {
+		destroy_entity(this.self_ref)
+		return
 	}
 }
 
 particle_system_destructor :: proc(this: ^ParticleSystem) {
-	if this.system.mesh_name != "" {
-		string_free(this.system.mesh_name)
-	}
-	if this.system.texture != "" {
-		string_free(this.system.texture)
-	}
+	fmt.printf("destroyed particle system\n")
+	string_free(this.system.mesh_name)
+	string_free(this.system.texture)
 	delete(this.system.particles, engine_alloc())
 }
 
@@ -805,49 +784,6 @@ clone_mesh :: proc(msh: EntityMesh, allocator: mem.Allocator) -> EntityMesh {
 	return out
 }
 
-RaycastResult :: struct {
-	hit_entity:   EntityRef,
-	hit_location: Vec3,
-	hit_normal:   Vec3,
-}
-raycast :: proc(
-	start: Vec3,
-	direction: Vec3,
-	distance: f64,
-	ignored: []EntityRef,
-) -> (
-	rs: RaycastResult,
-	hit: bool,
-) {
-	min_dist: f64 = 0.
-	for i in get_all_entities() {
-		thit := false
-		if .Intangible in i.tags {
-			continue
-		}
-		for j in ignored {
-			if j == i.self_ref {
-				thit = true
-				break
-			}
-		}
-		if thit {
-			continue
-		}
-		bhit, pos, norm := raycast_against_object(start, direction, distance, i.phys)
-		if bhit {
-			dist := linalg.distance(start, pos)
-			if dist < min_dist || !hit {
-				min_dist = dist
-				hit = true
-				rs.hit_entity = i.self_ref
-				rs.hit_location = pos
-				rs.hit_normal = norm
-			}
-		}
-	}
-	return
-}
 
 get_forward_vector :: proc(this: ^Entity) -> Vec3 {
 	return linalg.quaternion256_mul_vector3(this.phys.rotation, Vec3{1, 0, 0})

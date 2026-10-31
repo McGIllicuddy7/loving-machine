@@ -26,9 +26,9 @@ game_main :: proc() {
 	defer engine.fini()
 	game.game_setup()
 	t, _ := game.create_space_ship({10, 0, 0}, quaternion256(1), true)
-	for i in 0 ..< 1000 {
+	for i in 0 ..< 400 {
 		_, tmp := engine.create_entity(engine.Entity)
-		sz := 6
+		sz := 40
 		tmp.phys.position =
 			{
 				cast(f64)rand.int_range(-sz, sz + 1),
@@ -40,6 +40,7 @@ game_main :: proc() {
 		tmp.phys.height = 0.5
 		tmp.phys.width = 0.5
 		tmp.phys.length = 0.5
+		tmp.phys.is_static = true
 		tmp.mesh.name = engine.string_clone("cube")
 		tmp.mesh.diffuse_map_name = engine.string_clone("metal_diffuse.png")
 		tmp.mesh.normal_map_name = engine.string_clone("metal_normal.png")

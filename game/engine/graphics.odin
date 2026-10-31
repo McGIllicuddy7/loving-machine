@@ -137,8 +137,9 @@ GraphicsParticleSystem :: struct {
 	texture:    string,
 	mode:       DrawingMode,
 	drag:       f32,
-	particles:  #soa[]Particle,
+	particles:  []Particle,
 }
+
 
 GraphicsCommandBuffer :: struct {
 	lock:            sync.Mutex,
@@ -415,7 +416,7 @@ bind_particle_system :: proc(system: GraphicsParticleSystem) {
 			count += 1
 		}
 	}
-	system_clone.particles = make_soa_slice(#soa[]Particle, count, write_buffer_alloc())
+	system_clone.particles = make_slice([]Particle, count, write_buffer_alloc())
 	idx := 0
 	for i in system.particles {
 		if i.remaining_lifetime >= 0.0 {
@@ -453,22 +454,41 @@ draw_graphics_objects :: proc(
 	light_camera: raylib.Camera,
 	depth_pass: bool,
 ) {
-	dir_loc := raylib.GetShaderLocation(this.shader, "light_direction")
+	@(static) dir_loc: i32 = -1
+	if dir_loc == -1 {
+		dir_loc = raylib.GetShaderLocation(this.shader, "light_direction")
+	}
 	//assert(dir_loc != -1)
-	light_col_loc := raylib.GetShaderLocation(this.shader, "light_color")
+	@(static) light_col_loc: i32 = -1
+	if light_col_loc == -1 {
+		light_col_loc = raylib.GetShaderLocation(this.shader, "light_color")
+	}
 	light_direction := linalg.normalize(raylib.Vector3{0, 0, -1})
 	light_color := linalg.normalize(raylib.Vector4{1., 0.99, 0.95, 1.})
 	raylib.SetShaderValue(this.shader, dir_loc, &light_direction, .VEC3)
 	raylib.SetShaderValue(this.shader, light_col_loc, &light_color, .VEC4)
-	rough_loc := raylib.GetShaderLocation(this.shader, "roughness")
-	metal_loc := raylib.GetShaderLocation(this.shader, "metallic")
-	depth_pass_loc := raylib.GetShaderLocation(this.shader, "is_depth_pass")
+
+	@(static) rough_loc: i32 = -1
+	if rough_loc == -1 {
+		rough_loc = raylib.GetShaderLocation(this.shader, "roughness")
+	}
+	@(static) metal_loc: i32 = -1
+	if metal_loc == -1 {
+		metal_loc = raylib.GetShaderLocation(this.shader, "metallic")
+	}
+	@(static) depth_pass_loc: i32 = -1
+	if depth_pass_loc == -1 {
+		depth_pass_loc = raylib.GetShaderLocation(this.shader, "is_depth_pass")
+	}
 	{
 		tmp: i32 = 1 if depth_pass else 0
 		raylib.SetShaderValue(this.shader, depth_pass_loc, &tmp, .INT)
 		tmp2: raylib.Camera3D = light_camera
 		cam_mat := raylib.GetCameraMatrix(tmp2) * raylib.GetCameraProjectionMatrix(&tmp2, 1.)
-		cam_mat_loc := raylib.GetShaderLocation(this.shader, "light_matrix")
+		cam_mat_loc: i32 = -1
+		if cam_mat_loc == -1 {
+			cam_mat_loc = raylib.GetShaderLocation(this.shader, "light_matrix")
+		}
 		raylib.BeginMode3D(light_camera)
 		rlgl.SetClipPlanes(0.01, 1000.)
 		light_view := rlgl.GetMatrixModelview()
@@ -480,8 +500,14 @@ draw_graphics_objects :: proc(
 		//		fmt.printf("%v\n", light_view_proj)
 
 	}
-	diffuse_col_loc := raylib.GetShaderLocation(this.shader, "colDiffuse")
-	emmsive_col_loc := raylib.GetShaderLocation(this.shader, "colEmmisive")
+	@(static) diffuse_col_loc: i32 = -1
+	if diffuse_col_loc == -1 {
+		diffuse_col_loc = raylib.GetShaderLocation(this.shader, "colDiffuse")
+	}
+	@(static) emmisive_col_loc: i32 = -1
+	if emmisive_col_loc == -1 {
+		emmisive_col_loc = raylib.GetShaderLocation(this.shader, "colEmmisive")
+	}
 	raylib.BeginMode3D(camera)
 	rlgl.SetClipPlanes(0.01, 1000.)
 	if !depth_pass && this.sky_box.star_count > 0 {
@@ -500,11 +526,11 @@ draw_graphics_objects :: proc(
 			)
 		}
 		{
-			loc := raylib.GetShaderLocation(this.particle_shader, "colors")
+			@(static) loc: i32 = -1
+			if loc == -1 {
+				loc = raylib.GetShaderLocation(this.particle_shader, "colors")
+			}
 			raylib.SetShaderValueV(this.particle_shader, loc, &cols[0], .VEC4, cast(i32)len(cols))
-			is_int := raylib.GetShaderLocation(this.particle_material.shader, "is_instanced")
-			t0: i32 = 1
-			raylib.SetShaderValue(this.particle_material.shader, is_int, &t0, .INT)
 		}
 		raylib.DrawMeshInstanced(
 			this.meshes["star"].meshes[0],
@@ -561,7 +587,7 @@ draw_graphics_objects :: proc(
 			raylib.SetShaderValue(this.shader, rough_loc, &i.mesh_roughness, .FLOAT)
 			raylib.SetShaderValue(this.shader, metal_loc, &i.mesh_metallic, .FLOAT)
 			col_em: [3]f32 = cast([3]f32)(i.emmisive_color.rgb) / 255.
-			raylib.SetShaderValue(this.shader, emmsive_col_loc, &col_em, .VEC3)
+			raylib.SetShaderValue(this.shader, emmisive_col_loc, &col_em, .VEC3)
 		}
 		for j in 0 ..< msh.meshCount {
 			cur := msh.meshes[j]
@@ -574,7 +600,10 @@ draw_graphics_objects :: proc(
 		}
 	}
 	if !depth_pass {
-		color_loc := raylib.GetShaderLocation(this.particle_shader, "colors")
+		@(static) color_loc: i32 = -1
+		if color_loc == -1 {
+			color_loc = raylib.GetShaderLocation(this.particle_shader, "colors")
+		}
 		for &i in this.read_command_buffer.particles {
 			if len(i.particles) == 0 {
 				continue
@@ -601,10 +630,32 @@ draw_graphics_objects :: proc(
 			old_ptr := context.user_ptr
 			defer context.user_ptr = old_ptr
 			context.user_ptr = &cam_loc
-			sort.quick_sort_proc(tmp, proc(x: Particle, y: Particle) -> int {
+			@(fast_math = {
+				.Allow_Reassoc,
+				.No_NaNs,
+				.No_Infs,
+				.No_Signed_Zeros,
+				.Allow_Reciprocal,
+				.Allow_Contract,
+			})
+			sorter :: proc(x: Particle, y: Particle) -> int {
+				@(fast_math = {
+					.Allow_Reassoc,
+					.No_NaNs,
+					.No_Infs,
+					.No_Signed_Zeros,
+					.Allow_Reciprocal,
+					.Allow_Contract,
+				})
+				distance_squared :: proc(a: Vec3f, b: Vec3f) -> f32 {
+					dx := a.x - b.x
+					dy := a.y - b.y
+					dz := a.z - b.z
+					return dx * dx + dy * dy + dz * dz
+				}
 				loc := (cast(^Vec3f)context.user_ptr)^
-				d1 := linalg.distance(x.position, loc)
-				d2 := linalg.distance(y.position, loc)
+				d1 := distance_squared(x.position, loc)
+				d2 := distance_squared(y.position, loc)
 				if d1 < d2 {
 					return 1
 				} else if d1 == d2 {
@@ -612,7 +663,8 @@ draw_graphics_objects :: proc(
 				} else {
 					return -1
 				}
-			})
+			}
+			sort.quick_sort_proc(tmp, sorter)
 			for j, idx in tmp {
 				cols[idx] = cast([4]f32)j.tint / 255.
 				rot: quaternion128 = quaternion128(1)
@@ -630,13 +682,6 @@ draw_graphics_objects :: proc(
 					&cols[0],
 					.VEC4,
 					cast(i32)len(cols),
-				)
-			}
-			{
-				light_color_loc := raylib.GetShaderLocation(this.particle_shader, "light_color")
-				light_direction_loc := raylib.GetShaderLocation(
-					this.particle_shader,
-					"light_direction",
 				)
 			}
 			old_text := this.particle_material.maps[0].texture
@@ -852,26 +897,21 @@ graphics_step :: proc() {
 		raylib.BeginDrawing()
 		raylib.ClearBackground(raylib.BLACK)
 		raylib.BeginShaderMode(this.post_process_shader)
+		w := cast(f32)this.target_texture.texture.width
+		h := cast(f32)this.target_texture.texture.height
+		dw := cast(f32)raylib.GetScreenWidth()
+		dh := cast(f32)raylib.GetScreenHeight()
 		raylib.DrawTexturePro(
 			this.target_texture.texture,
-			{
-				0,
-				0,
-				cast(f32)this.target_texture.texture.width,
-				-cast(f32)this.target_texture.texture.height,
-			},
-			{
-				0,
-				0,
-				cast(f32)this.target_texture.texture.width,
-				cast(f32)this.target_texture.texture.height,
-			},
+			{0, 0, w, -h},
+			{0, 0, dw, dh},
 			{},
 			0.,
 			raylib.WHITE,
 		)
 		raylib.EndShaderMode()
 		render_logs()
+		raylib.DrawFPS(850, 50)
 		raylib.EndDrawing()
 		update_logs()
 		{
@@ -914,8 +954,8 @@ create_command_buffer :: proc() -> ^GraphicsCommandBuffer {
 }
 
 create_graphics_context :: proc() -> ^GraphicsContext {
-	raylib.InitWindow(1000, 1000, "hello window!")
-	raylib.SetTargetFPS(61)
+	raylib.InitWindow(640 * 2, 480 * 2, "hello window!")
+	raylib.SetTargetFPS(90)
 	{
 		raylib.BeginDrawing()
 		raylib.EndDrawing()
@@ -940,7 +980,7 @@ create_graphics_context :: proc() -> ^GraphicsContext {
 		raylib.EndTextureMode()
 	}
 	{
-		STAR_COUNT :: 2048
+		STAR_COUNT :: 1024
 		#assert(STAR_COUNT < MAX_STAR_COUNT)
 		out.sky_box.star_count = STAR_COUNT
 		out.sky_box.sun_pos = {0, 50, 900}
@@ -972,10 +1012,7 @@ create_graphics_context :: proc() -> ^GraphicsContext {
 		out.particle_shader = raylib.LoadShader("instance.vert", "instance.frag")
 		out.particle_material.shader = out.particle_shader
 	}; {
-		out.target_texture = raylib.LoadRenderTexture(
-			raylib.GetScreenWidth(),
-			raylib.GetScreenHeight(),
-		)
+		out.target_texture = raylib.LoadRenderTexture(640 * 2, 480 * 2)
 		out.post_process_shader = raylib.LoadShader(nil, "post_process.frag")
 		setup_palette(out.post_process_shader)
 	}

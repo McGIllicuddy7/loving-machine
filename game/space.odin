@@ -1,4 +1,5 @@
 package game
+import "core:fmt"
 import "core:math"
 import "core:math/linalg"
 import "core:strings"
@@ -14,6 +15,7 @@ string_clone :: engine.string_clone
 Spaceship :: struct {
 	using _parent: engine.Entity,
 	is_player:     bool,
+	t_name:        string,
 }
 
 create_space_ship :: proc(pos: Vec3, rotation: Quat, is_player: bool) -> (EntityRef, ^Spaceship) {
@@ -32,6 +34,7 @@ create_space_ship :: proc(pos: Vec3, rotation: Quat, is_player: bool) -> (Entity
 	ship.mesh.name = string_clone("cylinder")
 	ship.mesh.diffuse_map_name = string_clone("metal_diffuse.png")
 	ship.mesh.normal_map_name = string_clone("metal_normal.png")
+	ship.t_name = string_clone("gay")
 	pi := math.PI
 	return rf, ship
 }
@@ -40,7 +43,7 @@ ship_on_update :: proc(this: ^Spaceship, dt: f32) {
 	if (this.is_player) {
 		engine.handle_movement_input_simple_3d(this, 10., 1., dt)
 		engine.attach_camera_to(this, {-1, 0.0, 0.6}, Quat(1))
-		if raylib.IsKeyPressed(.T) {
+		if raylib.IsMouseButtonPressed(.LEFT) {
 			rs, hit := engine.raycast(
 				this.phys.position,
 				engine.get_forward_vector(this),
@@ -53,6 +56,7 @@ ship_on_update :: proc(this: ^Spaceship, dt: f32) {
 				engine.spawn_explosion(
 					this.phys.position + engine.get_forward_vector(this) * 100,
 					10,
+					this.phys.velocity,
 				)
 			}
 		}
@@ -64,7 +68,8 @@ ship_on_render :: proc(this: ^Spaceship) {
 }
 
 ship_destructor :: proc(this: ^Spaceship) {
-
+	fmt.printf("destructor ran\n")
+	engine.string_free(this.t_name)
 }
 
 ship_on_event :: proc(this: ^Spaceship, ev: engine.Event) {

@@ -70,6 +70,14 @@ CollisionData :: struct {
 	tile_map: TileMap,
 }
 
+@(fast_math = {
+	.Allow_Reassoc,
+	.No_NaNs,
+	.No_Infs,
+	.No_Signed_Zeros,
+	.Allow_Reciprocal,
+	.Allow_Contract,
+})
 get_vertices :: proc(obj: PhysicsObject) -> [8]Vec3 {
 	x_dim := obj.length / 2
 	y_dim := obj.width / 2
@@ -90,6 +98,14 @@ get_vertices :: proc(obj: PhysicsObject) -> [8]Vec3 {
 	return out
 }
 
+@(fast_math = {
+	.Allow_Reassoc,
+	.No_NaNs,
+	.No_Infs,
+	.No_Signed_Zeros,
+	.Allow_Reciprocal,
+	.Allow_Contract,
+})
 get_normals :: proc(object: PhysicsObject) -> [6]Vec3 {
 	out: [6]Vec3 = {{0, 0, -1}, {0, 0, 1}, {0, -1, 0}, {0, 1, 0}, {-1, 0, 0}, {1, 0, 0}}
 	for &i in out {
@@ -98,6 +114,14 @@ get_normals :: proc(object: PhysicsObject) -> [6]Vec3 {
 	return out
 }
 
+@(fast_math = {
+	.Allow_Reassoc,
+	.No_NaNs,
+	.No_Infs,
+	.No_Signed_Zeros,
+	.Allow_Reciprocal,
+	.Allow_Contract,
+})
 get_collision_vectors :: proc(object: PhysicsObject) -> [26]Vec3 {
 	out: [26]Vec3
 	count := 0
@@ -119,6 +143,14 @@ get_collision_vectors :: proc(object: PhysicsObject) -> [26]Vec3 {
 	return out
 }
 
+@(fast_math = {
+	.Allow_Reassoc,
+	.No_NaNs,
+	.No_Infs,
+	.No_Signed_Zeros,
+	.Allow_Reciprocal,
+	.Allow_Contract,
+})
 get_object_radius :: proc(obj: PhysicsObject) -> f64 {
 	x_dim := obj.length / 2
 	y_dim := obj.width / 2
@@ -146,7 +178,15 @@ get_object_radius :: proc(obj: PhysicsObject) -> f64 {
 	return max(dists[0], dists[1], dists[2], dists[3], dists[4], dists[5], dists[6], dists[7])
 }
 
-//returns normal poi64ing from b to a
+//returns normal pointing from b to a
+@(fast_math = {
+	.Allow_Reassoc,
+	.No_NaNs,
+	.No_Infs,
+	.No_Signed_Zeros,
+	.Allow_Reciprocal,
+	.Allow_Contract,
+})
 check_collision_objects :: proc(
 	object_a: PhysicsObject,
 	object_b: PhysicsObject,
@@ -241,6 +281,14 @@ check_collision_objects :: proc(
 	return
 }
 
+@(fast_math = {
+	.Allow_Reassoc,
+	.No_NaNs,
+	.No_Infs,
+	.No_Signed_Zeros,
+	.Allow_Reciprocal,
+	.Allow_Contract,
+})
 raycast_against_object :: proc(
 	start: Vec3,
 	direction: Vec3,
@@ -354,6 +402,14 @@ raycast_against_object :: proc(
 	}
 }
 
+@(fast_math = {
+	.Allow_Reassoc,
+	.No_NaNs,
+	.No_Infs,
+	.No_Signed_Zeros,
+	.Allow_Reciprocal,
+	.Allow_Contract,
+})
 generate_collision_data :: proc(
 	objects: []TaggedPhysicsObject,
 	allocator: mem.Allocator,
@@ -409,6 +465,14 @@ generate_collision_data :: proc(
 	return data
 }
 
+@(fast_math = {
+	.Allow_Reassoc,
+	.No_NaNs,
+	.No_Infs,
+	.No_Signed_Zeros,
+	.Allow_Reciprocal,
+	.Allow_Contract,
+})
 check_collision_projectile :: proc(
 	obj: TaggedPhysicsObject,
 	start_pos: Vec3,
@@ -482,6 +546,14 @@ check_collision_projectile :: proc(
 	return
 }
 
+@(fast_math = {
+	.Allow_Reassoc,
+	.No_NaNs,
+	.No_Infs,
+	.No_Signed_Zeros,
+	.Allow_Reciprocal,
+	.Allow_Contract,
+})
 physics_update :: proc(
 	objects: []TaggedPhysicsObject,
 	delta_time: f64,
@@ -611,6 +683,14 @@ physics_update :: proc(
 	return events
 }
 
+@(fast_math = {
+	.Allow_Reassoc,
+	.No_NaNs,
+	.No_Infs,
+	.No_Signed_Zeros,
+	.Allow_Reciprocal,
+	.Allow_Contract,
+})
 check_collision_against :: proc(
 	obj: TaggedPhysicsObject,
 	set: CollisionData,
@@ -651,6 +731,62 @@ check_collision_against :: proc(
 			}
 		}
 	}
+	return
+}
 
+RaycastResult :: struct {
+	hit_entity:   EntityRef,
+	hit_location: Vec3,
+	hit_normal:   Vec3,
+}
+
+
+@(fast_math = {
+	.Allow_Reassoc,
+	.No_NaNs,
+	.No_Infs,
+	.No_Signed_Zeros,
+	.Allow_Reciprocal,
+	.Allow_Contract,
+})
+raycast :: proc(
+	start: Vec3,
+	direction: Vec3,
+	distance: f64,
+	ignored: []EntityRef,
+) -> (
+	rs: RaycastResult,
+	hit: bool,
+) {
+	min_dist: f64 = 0.
+	for i in get_all_entities() {
+		thit := false
+		if .Intangible in i.tags {
+			continue
+		}
+		for j in ignored {
+			if j == i.self_ref {
+				thit = true
+				break
+			}
+		}
+		if thit {
+			continue
+		}
+		if distance + get_object_radius(i.phys) < linalg.distance(i.phys.position, start) {
+			continue
+		}
+		bhit, pos, norm := raycast_against_object(start, direction, distance, i.phys)
+		if bhit {
+			dist := linalg.distance(start, pos)
+			if dist < min_dist || !hit {
+				min_dist = dist
+				hit = true
+				rs.hit_entity = i.self_ref
+				rs.hit_location = pos
+				rs.hit_normal = norm
+			}
+		}
+	}
 	return
 }
