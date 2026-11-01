@@ -32,14 +32,13 @@ void main()
     float min_dist;
     vec4 outv = palette[0];
     min_dist =b_dist_square(base, palette[0]);
-    for(int i  = 1; i<255; i++){
+    for(int i  = 1; i<256; i++){
         float dist= b_dist_square(base, palette[i]);
         if (dist<=min_dist){
             min_dist = dist ;
             outv = palette[i];
         }
     }
-    int d = int(base.r*255)%256;
     //finalColor = palette[int(abs(fragTexCoord.x)*16+abs(fragTexCoord.y)*256)%256];
     //finalColor.a = 1;
     finalColor = outv;

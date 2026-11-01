@@ -26,9 +26,9 @@ game_main :: proc() {
 	defer engine.fini()
 	game.game_setup()
 	t, _ := game.create_space_ship({10, 0, 0}, quaternion256(1), true)
-	for i in 0 ..< 400 {
+	for i in 0 ..< 1000 {
 		_, tmp := engine.create_entity(engine.Entity)
-		sz := 40
+		sz := 500
 		tmp.phys.position =
 			{
 				cast(f64)rand.int_range(-sz, sz + 1),
@@ -46,7 +46,5 @@ game_main :: proc() {
 		tmp.mesh.normal_map_name = engine.string_clone("metal_normal.png")
 		tmp.mesh.color = raylib.WHITE
 	}
-	for !raylib.WindowShouldClose() {
-		engine.game_tick()
-	}
+	engine.engine_run()
 }

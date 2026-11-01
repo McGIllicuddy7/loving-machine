@@ -122,6 +122,7 @@ get_normals :: proc(object: PhysicsObject) -> [6]Vec3 {
 	.Allow_Reciprocal,
 	.Allow_Contract,
 })
+
 get_collision_vectors :: proc(object: PhysicsObject) -> [26]Vec3 {
 	out: [26]Vec3
 	count := 0
@@ -416,7 +417,6 @@ generate_collision_data :: proc(
 ) -> CollisionData {
 	data: CollisionData
 	data.objects = objects
-
 	data.tile_map.tile_sz_x = 1.
 	data.tile_map.tile_sz_y = 1.
 	data.tile_map.tile_sz_z = 1.
@@ -579,7 +579,7 @@ physics_update :: proc(
 				phys.angular_velocity.z * delta_time,
 				.XYZ,
 			)
-		if (phys.velocity == Vec3{0, 0, 0}) {
+		if (phys.velocity == Vec3{0, 0, 0} || phys.is_static) {
 			continue
 		}
 		if i.ptr.is_projectile {
@@ -613,7 +613,7 @@ physics_update :: proc(
 			base_pos := phys.position
 			old_pos := phys.position
 			max_disp := linalg.length(phys.velocity * delta_time)
-			DELTA :: 0.01
+			DELTA :: 0.05
 			disp: f64 = 0.00
 			nvel := phys.velocity / (linalg.length(phys.velocity))
 			for disp < max_disp {

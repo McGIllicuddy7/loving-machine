@@ -1214,3 +1214,56 @@ setup_palette :: proc(shader: raylib.Shader) {
 	loc := raylib.GetShaderLocation(shader, "palette")
 	raylib.SetShaderValueV(shader, loc, &output[0], .VEC4, 256)
 }
+
+@(private = "file")
+STEP_LOCK: sync.Sema
+@(private = "file")
+SHOULD_QUIT: bool
+@(private = "file")
+IS_WRITING: bool
+@(private = "file")
+IS_DONE: bool
+
+
+graphics_thread :: proc() {
+	SHOULD_QUIT = false
+	IS_WRITING = false
+	IS_DONE = false
+	for {
+		if sync.atomic_load(&SHOULD_QUIT) {
+			break
+		}
+		sync.atomic_store(&IS_WRITING, true)
+		graphics_step()
+		if raylib.WindowShouldClose() {
+			sync.atomic_store(&SHOULD_QUIT, true)
+		}
+		sync.atomic_store(&IS_WRITING, false)
+		sync.sema_wait(&STEP_LOCK)
+
+	}
+	sync.atomic_store(&IS_DONE, true)
+}
+
+graphics_swap_buffers :: proc() {
+	for {
+		if !sync.atomic_load(&IS_WRITING) {
+			break
+		}
+	}
+	sync.sema_post(&STEP_LOCK)
+}
+
+graphics_exit :: proc() {
+	sync.atomic_store(&SHOULD_QUIT, true)
+	sync.sema_post(&STEP_LOCK)
+	for {
+		if !sync.atomic_load(&IS_WRITING) {
+			break
+		}
+	}
+}
+
+should_quit :: proc() -> bool {
+	return sync.atomic_load(&SHOULD_QUIT)
+}
