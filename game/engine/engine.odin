@@ -510,7 +510,7 @@ broadcast_event :: proc(ev: Event) {
 	queue.push_back(&world.events, ev)
 }
 
-game_tick :: proc(is_threaded := false) {
+game_tick :: proc() {
 	engine := &ENGINE
 	engine.loader_state = {}
 	world := _get_world()
@@ -606,11 +606,7 @@ game_tick :: proc(is_threaded := false) {
 				)
 			}
 		}
-		if !is_threaded {
-			graphics_step()
-		} else {
-			graphics_swap_buffers()
-		}
+		graphics_step()
 	}
 	{
 
@@ -803,14 +799,8 @@ get_left_vector :: proc(this: ^Entity) -> Vec3 {
 get_up_vector :: proc(this: ^Entity) -> Vec3 {
 	return linalg.quaternion256_mul_vector3(this.phys.rotation, Vec3{0, 0, 1})
 }
-engine_thread :: proc() {
-	for !should_quit() {
-		game_tick(true)
-	}
-}
-
 engine_run :: proc() {
-	t := thread.create_and_start(engine_thread)
-	defer thread.destroy(t)
-	graphics_thread()
+	for !raylib.WindowShouldClose() {
+		game_tick()
+	}
 }

@@ -1014,7 +1014,6 @@ create_graphics_context :: proc() -> ^GraphicsContext {
 	}; {
 		out.target_texture = raylib.LoadRenderTexture(640 * 2, 480 * 2)
 		out.post_process_shader = raylib.LoadShader(nil, "post_process.frag")
-		setup_palette(out.post_process_shader)
 	}
 	out.shader = raylib.LoadShader("main.vert", "main.frag")
 	out.base_mat = raylib.LoadMaterialDefault()
@@ -1163,107 +1162,4 @@ create_default_assets :: proc(this: ^GraphicsContext) {
 			this.textures[strings.clone("square")] = raylib.LoadTextureFromImage(img)
 		}
 	}
-}
-
-setup_palette :: proc(shader: raylib.Shader) {
-	hues: [256]raylib.Color
-	output: [256][4]f32
-	idx := 0
-	//saturation =0
-	//8
-	idx2 := 0
-	for i in 0 ..< 16 {
-		hues[idx] = raylib.ColorFromHSV(0, 0, cast(f32)i / 16)
-		idx += 1
-		idx2 += 1
-	}
-	idx2 = 0
-	//saturation = 0.5
-	//7 * 16
-	for i in 1 ..< 7 {
-		for j in 0 ..< 16 {
-			hues[idx] = raylib.ColorFromHSV(cast(f32)(j * 360) / 16., 0.5, cast(f32)i / 6)
-			idx += 1
-			idx2 += 1
-		}
-	}
-	//saturation = 0.8
-	idx2 = 0
-	for i in 1 ..< 7 {
-		for j in 0 ..< 16 {
-			hues[idx] = raylib.ColorFromHSV(cast(f32)(j * 360) / 16., 0.8, cast(f32)i / 6)
-			idx += 1
-			idx2 += 1
-		}
-	}
-	idx2 = 0
-	//saturation = 1.
-	for i in 1 ..< 4 {
-		for j in 0 ..< 16 {
-			hues[idx] = raylib.ColorFromHSV(cast(f32)(j * 360) / 16., 1., cast(f32)(i + 3) / 6)
-			idx += 1
-			idx2 += 1
-		}
-	}
-	assert(idx == 256)
-	for i in 0 ..< 256 {
-		output[i] = cast([4]f32)hues[i] / 255.
-	}
-	fmt.printf("palette:%v\n", hues)
-	fmt.printf("palette float:%v\n", output)
-	loc := raylib.GetShaderLocation(shader, "palette")
-	raylib.SetShaderValueV(shader, loc, &output[0], .VEC4, 256)
-}
-
-@(private = "file")
-STEP_LOCK: sync.Sema
-@(private = "file")
-SHOULD_QUIT: bool
-@(private = "file")
-IS_WRITING: bool
-@(private = "file")
-IS_DONE: bool
-
-
-graphics_thread :: proc() {
-	SHOULD_QUIT = false
-	IS_WRITING = false
-	IS_DONE = false
-	for {
-		if sync.atomic_load(&SHOULD_QUIT) {
-			break
-		}
-		sync.atomic_store(&IS_WRITING, true)
-		graphics_step()
-		if raylib.WindowShouldClose() {
-			sync.atomic_store(&SHOULD_QUIT, true)
-		}
-		sync.atomic_store(&IS_WRITING, false)
-		sync.sema_wait(&STEP_LOCK)
-
-	}
-	sync.atomic_store(&IS_DONE, true)
-}
-
-graphics_swap_buffers :: proc() {
-	for {
-		if !sync.atomic_load(&IS_WRITING) {
-			break
-		}
-	}
-	sync.sema_post(&STEP_LOCK)
-}
-
-graphics_exit :: proc() {
-	sync.atomic_store(&SHOULD_QUIT, true)
-	sync.sema_post(&STEP_LOCK)
-	for {
-		if !sync.atomic_load(&IS_WRITING) {
-			break
-		}
-	}
-}
-
-should_quit :: proc() -> bool {
-	return sync.atomic_load(&SHOULD_QUIT)
 }

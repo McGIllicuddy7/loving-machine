@@ -7,18 +7,14 @@ flat in int instanceId;
 // Input uniform values
 uniform sampler2D texture0;
 uniform vec4 colDiffuse;
-uniform vec4 palette[256];
 // Output fragment color
 out vec4 finalColor;
 
 // NOTE: Add your custom variables here
-float b_dist_square(vec4 a, vec4 b){
-    float dr = (a.r-b.r);
-    float dg = (a.g-b.g);
-    float db =(a.b-b.b);
-    return dr*dr+dg*dg+db*db;
-}
 
+float dither(float base, float dither_amount){
+    return float(int(floor(base*dither_amount)))/dither_amount;
+}
 void main()
 {
     // Texel color fetching from texture sampler
@@ -29,19 +25,9 @@ void main()
     //    times the tint color (colDiffuse)
     //    times the fragment color (interpolated vertex color)
     vec4 base = texelColor*colDiffuse*fragColor;
-    float min_dist;
-    vec4 outv = palette[0];
-    min_dist =b_dist_square(base, palette[0]);
-    for(int i  = 1; i<256; i++){
-        float dist= b_dist_square(base, palette[i]);
-        if (dist<=min_dist){
-            min_dist = dist ;
-            outv = palette[i];
-        }
-    }
-    //finalColor = palette[int(abs(fragTexCoord.x)*16+abs(fragTexCoord.y)*256)%256];
-    //finalColor.a = 1;
-    finalColor = outv;
-    finalColor.a = 1;
+    base.r = dither(base.r, 8);
+    base.g = dither(base.g, 8);
+    base.b = dither(base.b, 4);
+    finalColor = base;
     //finalColor = base;
 }
