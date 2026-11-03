@@ -13,8 +13,12 @@ out vec4 finalColor;
 // NOTE: Add your custom variables here
 
 float dither(float base, float dither_amount){
-    return float(int(floor(base*dither_amount)))/dither_amount;
+    float pw = 3;
+    float t0 = pow(base, 1./pw);
+    float t1 =float(int(floor(t0*dither_amount)))/dither_amount;
+    return pow(t1,pw );
 }
+
 void main()
 {
     // Texel color fetching from texture sampler
@@ -27,7 +31,7 @@ void main()
     vec4 base = texelColor*colDiffuse*fragColor;
     base.r = dither(base.r, 8);
     base.g = dither(base.g, 8);
-    base.b = dither(base.b, 4);
+    base.b = dither(base.b,8);
     finalColor = base;
     //finalColor = base;
 }

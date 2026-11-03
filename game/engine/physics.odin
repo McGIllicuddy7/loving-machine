@@ -78,7 +78,7 @@ CollisionData :: struct {
 	.Allow_Reciprocal,
 	.Allow_Contract,
 })
-get_vertices :: proc(obj: PhysicsObject) -> [8]Vec3 {
+collision_get_vertices :: proc(obj: PhysicsObject) -> [8]Vec3 {
 	x_dim := obj.length / 2
 	y_dim := obj.width / 2
 	z_dim := obj.height / 2
@@ -106,7 +106,7 @@ get_vertices :: proc(obj: PhysicsObject) -> [8]Vec3 {
 	.Allow_Reciprocal,
 	.Allow_Contract,
 })
-get_normals :: proc(object: PhysicsObject) -> [6]Vec3 {
+collision_get_normals :: proc(object: PhysicsObject) -> [6]Vec3 {
 	out: [6]Vec3 = {{0, 0, -1}, {0, 0, 1}, {0, -1, 0}, {0, 1, 0}, {-1, 0, 0}, {1, 0, 0}}
 	for &i in out {
 		i = linalg.quaternion256_mul_vector3(object.rotation, i)
@@ -123,7 +123,7 @@ get_normals :: proc(object: PhysicsObject) -> [6]Vec3 {
 	.Allow_Contract,
 })
 
-get_collision_vectors :: proc(object: PhysicsObject) -> [26]Vec3 {
+collision_get_collision_vectors :: proc(object: PhysicsObject) -> [26]Vec3 {
 	out: [26]Vec3
 	count := 0
 	for z in -1 ..= 1 {
@@ -152,7 +152,7 @@ get_collision_vectors :: proc(object: PhysicsObject) -> [26]Vec3 {
 	.Allow_Reciprocal,
 	.Allow_Contract,
 })
-get_object_radius :: proc(obj: PhysicsObject) -> f64 {
+collision_get_object_radius :: proc(obj: PhysicsObject) -> f64 {
 	x_dim := obj.length / 2
 	y_dim := obj.width / 2
 	z_dim := obj.height / 2
@@ -188,7 +188,7 @@ get_object_radius :: proc(obj: PhysicsObject) -> f64 {
 	.Allow_Reciprocal,
 	.Allow_Contract,
 })
-check_collision_objects :: proc(
+collision_check_collision_objects :: proc(
 	object_a: PhysicsObject,
 	object_b: PhysicsObject,
 ) -> (
@@ -196,16 +196,16 @@ check_collision_objects :: proc(
 	normal: Vec3,
 	depth: f64,
 ) {
-	r_a := get_object_radius(object_a)
-	r_b := get_object_radius(object_b)
+	r_a := collision_get_object_radius(object_a)
+	r_b := collision_get_object_radius(object_b)
 	dist := linalg.distance(object_a.position, object_b.position)
 	if dist > r_a + r_b {
 		return
 	}
-	a_vecs := get_collision_vectors(object_a)
-	b_vecs := get_collision_vectors(object_b)
-	a_poi64s := get_vertices(object_a)
-	b_poi64s := get_vertices(object_b)
+	a_vecs := collision_get_collision_vectors(object_a)
+	b_vecs := collision_get_collision_vectors(object_b)
+	a_poi64s := collision_get_vertices(object_a)
+	b_poi64s := collision_get_vertices(object_b)
 	min_dist := dist
 	min_normal := a_vecs[0]
 	for i in a_vecs {
@@ -290,7 +290,7 @@ check_collision_objects :: proc(
 	.Allow_Reciprocal,
 	.Allow_Contract,
 })
-raycast_against_object :: proc(
+collision_raycast_against_object :: proc(
 	start: Vec3,
 	direction: Vec3,
 	distance: f64,
@@ -411,7 +411,7 @@ raycast_against_object :: proc(
 	.Allow_Reciprocal,
 	.Allow_Contract,
 })
-generate_collision_data :: proc(
+collision_generate_collision_data :: proc(
 	objects: []TaggedPhysicsObject,
 	allocator: mem.Allocator,
 ) -> CollisionData {
@@ -473,7 +473,7 @@ generate_collision_data :: proc(
 	.Allow_Reciprocal,
 	.Allow_Contract,
 })
-check_collision_projectile :: proc(
+collision_check_collision_projectile :: proc(
 	obj: TaggedPhysicsObject,
 	start_pos: Vec3,
 	end_pos: Vec3,
@@ -515,7 +515,7 @@ check_collision_projectile :: proc(
 	dir := linalg.normalize(end_pos - start_pos)
 	lgt := linalg.distance(start_pos, end_pos)
 	safe_dist = lgt
-	rad := get_object_radius(obj.ptr^)
+	rad := collision_get_object_radius(obj.ptr^)
 	min_dist := 0.0
 	for dz in z0 ..= z1 {
 		for dy in y0 ..= y1 {
@@ -529,7 +529,12 @@ check_collision_projectile :: proc(
 					if i.ref == obj.ref {
 						continue
 					}
-					hit, hit_loc, n := raycast_against_object(start_pos, dir, lgt, i.ptr^)
+					hit, hit_loc, n := collision_raycast_against_object(
+						start_pos,
+						dir,
+						lgt,
+						i.ptr^,
+					)
 					dist := linalg.distance(hit_loc, start_pos)
 					if hit && (!did_hit || dist < min_dist) {
 						min_dist = dist
@@ -563,7 +568,7 @@ physics_update :: proc(
 		a: EntityRef,
 		b: EntityRef,
 	}
-	data: CollisionData = generate_collision_data(objects, frame_allocator)
+	data: CollisionData = collision_generate_collision_data(objects, frame_allocator)
 	events := make([dynamic]CollisionEvent, frame_allocator)
 	hit_set := make(map[CollisionPair]u8)
 	defer delete(hit_set)
@@ -585,7 +590,7 @@ physics_update :: proc(
 		if i.ptr.is_projectile {
 			base_pos := phys.position
 			end_pos := phys.velocity * delta_time + base_pos
-			hit_ref, hit_obj, hit_norm, safe_dist, did_hit := check_collision_projectile(
+			hit_ref, hit_obj, hit_norm, safe_dist, did_hit := collision_check_collision_projectile(
 				i,
 				base_pos,
 				end_pos,
@@ -624,7 +629,8 @@ physics_update :: proc(
 					disp = disp + DELTA
 				}
 				phys.position = base_pos + disp * nvel
-				hit_ref, hit_obj, hit_norm, max_depth, did_hit := check_collision_against(i, data)
+				hit_ref, hit_obj, hit_norm, max_depth, did_hit :=
+					collision_check_collision_against(i, data)
 				if did_hit {
 					phys.rotation = old_rot
 					phys.position = old_pos
@@ -691,7 +697,7 @@ physics_update :: proc(
 	.Allow_Reciprocal,
 	.Allow_Contract,
 })
-check_collision_against :: proc(
+collision_check_collision_against :: proc(
 	obj: TaggedPhysicsObject,
 	set: CollisionData,
 ) -> (
@@ -717,7 +723,7 @@ check_collision_against :: proc(
 					if obj.ref.idx == i.ref.idx {
 						continue
 					}
-					col, norm, depth := check_collision_objects(obj.ptr^, i.ptr^)
+					col, norm, depth := collision_check_collision_objects(obj.ptr^, i.ptr^)
 					if col {
 						if depth > max_depth {
 							max_depth = depth
@@ -773,10 +779,11 @@ raycast :: proc(
 		if thit {
 			continue
 		}
-		if distance + get_object_radius(i.phys) < linalg.distance(i.phys.position, start) {
+		if distance + collision_get_object_radius(i.phys) <
+		   linalg.distance(i.phys.position, start) {
 			continue
 		}
-		bhit, pos, norm := raycast_against_object(start, direction, distance, i.phys)
+		bhit, pos, norm := collision_raycast_against_object(start, direction, distance, i.phys)
 		if bhit {
 			dist := linalg.distance(start, pos)
 			if dist < min_dist || !hit {

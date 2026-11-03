@@ -108,6 +108,18 @@ EGraphicsCommand :: union {
 	GCmdEnsureTextureLoaded,
 }
 
+@(private = "file")
+EGraphicsCommandDrawLine3D :: struct {}
+
+@(private = "file")
+EGraphicsCommandDrawSphere3D :: struct {}
+
+@(private = "file")
+EGraphicsCommand3D :: union {
+	EGraphicsCommandDrawLine3D,
+	EGraphicsCommandDrawSphere3D,
+}
+
 GraphicsCommand :: struct {
 	layer:   int,
 	command: EGraphicsCommand,
@@ -447,6 +459,7 @@ billboard_rotation :: proc(camera: raylib.Camera3D) -> (rot: raylib.Quaternion) 
 	return
 }
 
+@(private)
 draw_graphics_objects :: proc(
 	this: ^GraphicsContext,
 	meshes: []GraphicsObject,
@@ -980,15 +993,15 @@ create_graphics_context :: proc() -> ^GraphicsContext {
 		raylib.EndTextureMode()
 	}
 	{
-		STAR_COUNT :: 1024
-		#assert(STAR_COUNT < MAX_STAR_COUNT)
+		STAR_COUNT :: 8192
+		#assert(STAR_COUNT <= MAX_STAR_COUNT)
 		out.sky_box.star_count = STAR_COUNT
 		out.sky_box.sun_pos = {0, 50, 900}
 		out.sky_box.sun_rad = 40
 		out.sky_box.sun_color = raylib.WHITE
 		out.sky_box.star_color = {250, 250, 255, 255}
 		out.sky_box.sky_color = {0, 0, 50, 255}
-		rng_state := rand.PCG_Random_State{1917, 6162004}
+		rng_state := rand.PCG_Random_State{1917, 7162004}
 		rng := rand.pcg_random_generator(&rng_state)
 		for i in 0 ..< out.sky_box.star_count {
 			theta := rand.float32_range(0., 2 * math.PI, rng)
@@ -1027,6 +1040,7 @@ create_graphics_context :: proc() -> ^GraphicsContext {
 	return out
 }
 
+@(private)
 _create_shadowmap :: proc(width: i32, height: i32) -> raylib.RenderTexture2D {
 	//https://github.com/raysan5/raylib/blob/master/examples/shaders/shaders_shadowmap_rendering.c
 	out: raylib.RenderTexture2D
@@ -1054,11 +1068,13 @@ _create_shadowmap :: proc(width: i32, height: i32) -> raylib.RenderTexture2D {
 	}
 	return out
 }
+@(private)
 _unload_shadowmap_render_texture :: proc(target: raylib.RenderTexture2D) {
 	if (target.id > 0) {
 		rlgl.UnloadFramebuffer(target.id)
 	}
 }
+
 
 destroy_graphics_context :: proc(this: ^GraphicsContext) {
 	for key, value in this.meshes {
@@ -1080,6 +1096,7 @@ destroy_graphics_context :: proc(this: ^GraphicsContext) {
 	free(this)
 }
 
+@(private)
 render_logs :: proc() {
 	this := &ENGINE.logs
 	sync.mutex_lock(&this.lock)
@@ -1107,6 +1124,7 @@ render_logs :: proc() {
 	}
 }
 
+@(private)
 update_logs :: proc() {
 	this := &ENGINE.logs
 	sync.mutex_lock(&this.lock)
@@ -1125,6 +1143,7 @@ update_logs :: proc() {
 	this.values = out_set
 }
 
+@(private)
 create_default_assets :: proc(this: ^GraphicsContext) {
 	{
 		cube := raylib.GenMeshCube(1., 1., 1.)

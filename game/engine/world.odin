@@ -54,7 +54,7 @@ LevelData :: struct {
 	mesh_spawn_data:   []MeshSpawnData,
 	daemon_spawn_data: []DaemonSpawnData,
 }
-
+@(private)
 EntityClass :: struct {
 	id:                 typeid,
 	create_at_location: #type proc(transform: Transform, data: string) -> ^Entity,
@@ -65,7 +65,7 @@ EntityClass :: struct {
 	on_level_transfer:  #type proc(this: ^Entity),
 	deserialize:        #type proc(blob: EntityBlob) -> ^Entity,
 }
-
+@(private)
 DaemonClass :: struct {
 	id:          typeid,
 	create:      #type proc(data: string) -> ^Daemon,
@@ -75,15 +75,15 @@ DaemonClass :: struct {
 	on_destroy:  #type proc(this: ^Daemon),
 	deserialize: #type proc(blob: DaemonBlob) -> ^Daemon,
 }
-
+@(private)
 GameTypeInformation :: struct {
 	entity_classes: map[string]EntityClass,
 	daemon_classes: map[string]DaemonClass,
 }
-
-
+@(private)
 RTTI: GameTypeInformation
 
+@(private)
 deserialize_entity_proc :: proc($T: typeid) -> #type proc(blob: EntityBlob) -> ^Entity {
 	out :: proc(blob: EntityBlob) -> ^Entity {
 		tmp := new(T, engine_alloc())
@@ -96,6 +96,7 @@ deserialize_entity_proc :: proc($T: typeid) -> #type proc(blob: EntityBlob) -> ^
 	}
 	return out
 }
+@(private)
 deserialize_daemon_proc :: proc($T: typeid) -> #type proc(blob: DaemonBlob) -> ^Daemon {
 	out :: proc(blob: DaemonBlob) -> ^Daemon {
 		tmp := new(T, engine_alloc())
@@ -170,6 +171,7 @@ register_daemon_class :: proc(
 }
 
 
+@(private)
 serialize_entity :: proc(entity: ^Entity, allocator: mem.Allocator) -> EntityBlob {
 	an: any
 	an.data = entity
@@ -186,6 +188,7 @@ serialize_entity :: proc(entity: ^Entity, allocator: mem.Allocator) -> EntityBlo
 	return out
 }
 
+@(private)
 deserialize_entity :: proc(entity_data: EntityBlob) -> ^Entity {
 	type := RTTI.entity_classes[entity_data.type_name]
 	out_entity := type.deserialize(entity_data)
@@ -199,6 +202,7 @@ deserialize_entity :: proc(entity_data: EntityBlob) -> ^Entity {
 	return out_entity
 }
 
+@(private)
 serialize_daemon :: proc(daemon: ^Daemon, allocator: mem.Allocator) -> DaemonBlob {
 	an: any
 	an.data = daemon
@@ -215,6 +219,7 @@ serialize_daemon :: proc(daemon: ^Daemon, allocator: mem.Allocator) -> DaemonBlo
 }
 
 
+@(private)
 deserialize_daemon :: proc(daemon_data: DaemonBlob) -> ^Daemon {
 	type := RTTI.daemon_classes[daemon_data.type_name]
 	out_daemon := type.deserialize(daemon_data)
@@ -226,6 +231,7 @@ deserialize_daemon :: proc(daemon_data: DaemonBlob) -> ^Daemon {
 	return out_daemon
 }
 
+@(private)
 entity_type_name :: proc(et: ^Entity) -> string {
 	info := type_info_of(et._type)
 	name: string
@@ -239,6 +245,7 @@ entity_type_name :: proc(et: ^Entity) -> string {
 	return name
 }
 
+@(private)
 daemon_type_name :: proc(et: ^Daemon) -> string {
 	info := type_info_of(et._type)
 	name: string
@@ -252,6 +259,7 @@ daemon_type_name :: proc(et: ^Daemon) -> string {
 	return name
 }
 
+@(private)
 save_game_state :: proc(world: ^World, allocator: mem.Allocator) -> SaveStateBlob {
 	entity_blobs := make([dynamic]EntityBlob, allocator)
 	reserve(&entity_blobs, MAX_ENTITY_COUNT)
@@ -284,6 +292,7 @@ save_game_state :: proc(world: ^World, allocator: mem.Allocator) -> SaveStateBlo
 	return out
 }
 
+@(private)
 load_game_state :: proc(world: ^World, state: SaveStateBlob) {
 	unload_world(world)
 	for i in state.entities {
@@ -303,6 +312,7 @@ load_game_state :: proc(world: ^World, state: SaveStateBlob) {
 	}
 }
 
+@(private)
 _save_game_impl :: proc(path: string) {
 	fmt.printf("saving game state\n")
 	state := save_game_state(_get_world(), frame_alloc())
@@ -312,6 +322,7 @@ _save_game_impl :: proc(path: string) {
 	assert(err2 == nil)
 }
 
+@(private)
 _load_game_impl :: proc(path: string) {
 	fmt.printf("loading game state\n")
 	base, err := os.read_entire_file(path, frame_alloc())
@@ -333,6 +344,7 @@ load_game :: proc(path: string) {
 	ENGINE.loader_state.should_load = true
 }
 
+@(private)
 handle_loading :: proc() {
 	if ENGINE.loader_state.should_save {
 		_save_game_impl(ENGINE.loader_state.save_path)
@@ -347,6 +359,7 @@ transfer_level :: proc(level: LevelData) {
 	ENGINE.loader_state.should_transfer = true
 }
 
+@(private)
 _transfer_level_impl :: proc(data: LevelData) {
 	saved := make([dynamic]^Entity)
 	defer delete(saved)
@@ -414,6 +427,7 @@ _transfer_level_impl :: proc(data: LevelData) {
 	}
 }
 
+@(private)
 spawn_mesh :: proc(data: MeshSpawnData) {
 	rf, et := create_entity(Entity)
 	et.control_rotation = Quat(1)

@@ -22,6 +22,7 @@ Logs :: struct {
 	lock:   sync.Mutex,
 	values: [dynamic]Log,
 }
+
 MAX_ENTITY_COUNT :: 16384
 POOLED_CHEAP_ENTITY_COUNT :: 16384
 
@@ -76,7 +77,7 @@ DEFAULT_ENTITY_TABLE: EntityVtable = {}
 	meshes will be rendered automatically, on_render is for custom other rendering,for example ui
 	use engine_alloc() or the provided allocation functions(eg string_clone) for all allocations stored in the entity otherwise REALLLY BAD THINGS
 */
-JSON_SKIP :: `json:"-"`
+
 Daemon :: struct {
 	_type:      (typeid) `cbor:"-"`,
 	on_update:  (#type proc(this: ^Daemon, dt: f32)) `cbor:"-"`,
@@ -130,6 +131,7 @@ EntityManager :: struct {
 	entity_list:                 [dynamic]^Entity,
 	physics_object_list:         [dynamic]TaggedPhysicsObject,
 }
+
 
 World :: struct {
 	camera:                raylib.Camera3D,
@@ -441,6 +443,7 @@ destroy_entity :: proc(rf: EntityRef) {
 }
 
 
+@(private)
 finalize_entity :: proc(et: ^Entity) {
 	if et != nil {
 		if et.destructor != nil {
@@ -450,10 +453,12 @@ finalize_entity :: proc(et: ^Entity) {
 	}
 }
 
+@(private)
 delete_entity_backing_after_finalization :: proc(et: ^Entity) {
 	free(et, engine_alloc())
 }
 
+@(private)
 frame_destroy_entities :: proc() {
 	manager := _get_entity_manager()
 	for {

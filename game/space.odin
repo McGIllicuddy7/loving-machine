@@ -23,6 +23,7 @@ create_space_ship :: proc(pos: Vec3, rotation: Quat, is_player: bool) -> (Entity
 	vtable.on_render = ship_on_render
 	vtable.on_update = ship_on_update
 	vtable.destructor = ship_destructor
+	vtable.on_event = ship_on_event
 	rf, ship := engine.create_entity(Spaceship, vtable)
 	ship.is_player = is_player
 	ship.phys.position = pos
@@ -73,7 +74,7 @@ ship_destructor :: proc(this: ^Spaceship) {
 }
 
 ship_on_event :: proc(this: ^Spaceship, ev: engine.Event) {
-
+	engine.destroy_entity(this.self_ref)
 }
 
 ship_on_level_transfer :: proc(this: ^Spaceship) {}
