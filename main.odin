@@ -58,7 +58,7 @@ test_main :: proc() {
 	nd := libgraph.create_graph()
 	defer libgraph.destroy_graph(nd)
 	{
-		for i in 0 ..< 1000 {
+		for i in 0 ..< 10000 {
 			tmp_x := rand.int32_range(0, 1000)
 			tmp_y := rand.int32_range(0, 1000)
 			pos := Vec3{cast(f64)tmp_x, cast(f64)tmp_y, 0}
@@ -66,7 +66,8 @@ test_main :: proc() {
 		}
 		for i, idx in nd.nodes {
 			for jdx in idx + 1 ..< len(nd.nodes) {
-				if linalg.distance(nd.nodes[idx].pos, nd.nodes[jdx].pos) < 50. {
+				if linalg.distance(nd.nodes[idx].pos, nd.nodes[jdx].pos) < 50. &&
+				   rand.float32() < 0.2 {
 					libgraph.connect_nodes(nd, nd.nodes[idx], nd.nodes[jdx])
 				}
 			}
@@ -108,21 +109,27 @@ test_main :: proc() {
 		raylib.BeginDrawing()
 		raylib.ClearBackground(raylib.BLACK)
 		for i, idx in nd.nodes {
-			col := raylib.RED
-			if idx == start_idx || idx == end_idx {
-				col = raylib.GREEN
+			for j in i.edges {
+				if cast(uintptr)j < cast(uintptr)i {
+					raylib.DrawLine(
+						cast(i32)i.pos.x,
+						cast(i32)i.pos.y,
+						cast(i32)j.pos.x,
+						cast(i32)j.pos.y,
+						{40, 0, 0, 255},
+					)
+				}
 			}
 
-			for j in i.edges {
-				raylib.DrawLine(
-					cast(i32)i.pos.x,
-					cast(i32)i.pos.y,
-					cast(i32)j.pos.x,
-					cast(i32)j.pos.y,
-					{60, 0, 0, 255},
-				)
+		}
+		for i, idx in nd.nodes {
+			col := raylib.RED
+			rad: f32 = 2.
+			if idx == start_idx || idx == end_idx {
+				col = raylib.GREEN
+				rad = 4.
 			}
-			raylib.DrawCircle(cast(i32)i.pos.x, cast(i32)i.pos.y, 2., col)
+			raylib.DrawCircle(cast(i32)i.pos.x, cast(i32)i.pos.y, rad, col)
 		}
 		if len(path) > 1 {
 			for idx in 0 ..< len(path) - 1 {
@@ -135,12 +142,13 @@ test_main :: proc() {
 		}
 		raylib.DrawFPS(1000, 20)
 		raylib.DrawText(
-			fmt.ctprintf("time to path:%d microseconds\n", cast(i32)dur),
+			fmt.ctprintf("time to path:%d microseconds", cast(i32)dur),
 			1000,
 			50,
 			16,
 			raylib.BLUE,
 		)
+		raylib.DrawText(fmt.ctprintf("path length:%d", len(path)), 1000, 100, 16, raylib.BLUE)
 		raylib.EndDrawing()
 	}
 }

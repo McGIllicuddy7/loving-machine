@@ -216,33 +216,39 @@ pathfind_nodes :: proc(
 	open_set: priority_queue.Priority_Queue(^Node)
 	defer priority_queue.destroy(&open_set)
 	priority_queue.init(&open_set, proc(a: ^Node, b: ^Node) -> bool {
-		ptr := cast(^map[^Node]f64)context.user_ptr
-		if a not_in ptr^ {
-			return false
-		}
-		if b not_in ptr^ {
-			return true
-		}
-		a_n := ptr^[a]
-		b_n := ptr^[b]
-		return a_n < b_n
-	}, proc(list: []^Node, i, j: int) {
-		tmp := list[i]
-		list[i] = list[j]
-		list[j] = tmp
-	})
+			ptr := cast(^map[^Node]f64)context.user_ptr
+			if a not_in ptr^ {
+				return false
+			}
+			if b not_in ptr^ {
+				return true
+			}
+			a_n := ptr^[a]
+			b_n := ptr^[b]
+			return a_n < b_n
+		}, proc(list: []^Node, i, j: int) {
+			tmp := list[i]
+			list[i] = list[j]
+			list[j] = tmp
+		}, len(this.nodes))
 	open_set_set := make(map[^Node]u8)
+	reserve(&open_set_set, 128)
 	defer delete(open_set_set)
 	g_score: map[^Node]f64 = make(map[^Node]f64)
+	reserve(&g_score, len(this.nodes))
 	defer delete(g_score)
 	g_score[start] = 0
 	f_score: map[^Node]f64 = make(map[^Node]f64)
+	reserve(&f_score, len(this.nodes))
 	defer delete(f_score)
 	f_score[start] = heuristic(start, end)
+	old_ptr := context.user_ptr
 	context.user_ptr = &f_score
+	defer context.user_ptr = old_ptr
 	priority_queue.push(&open_set, start)
 	open_set_set[start] = 0
 	came_from: map[^Node]^Node = make(map[^Node]^Node)
+	reserve(&came_from, len(this.nodes))
 	defer delete(came_from)
 	for priority_queue.len(open_set) > 0 {
 		current: ^Node = nil
@@ -273,7 +279,6 @@ pathfind_nodes :: proc(
 					priority_queue.push(&open_set, neighbor)
 				}
 			}
-
 		}
 	}
 	return
