@@ -4,6 +4,7 @@ import "core:container/priority_queue"
 import "core:slice"
 
 import "core:fmt"
+import "core:math"
 import "core:math/linalg"
 import "core:mem"
 Vec3 :: linalg.Vector3f64
@@ -282,4 +283,94 @@ pathfind_nodes :: proc(
 		}
 	}
 	return
+}
+
+Grid :: struct {
+	length:            int,
+	width:             int,
+	height:            int,
+	occupied_sections: []bool,
+	cell_size:         f64,
+}
+
+create_grid :: proc(
+	length, width, height: int,
+	cell_size: f64 = 1.,
+	allocator := context.allocator,
+) -> ^Grid {
+	out := new(Grid, allocator)
+	out.length = length
+	out.width = width
+	out.height = height
+	out.cell_size = cell_size
+	out.occupied_sections = make_slice([]bool, length * width * height, allocator)
+	return out
+}
+
+destroy_grid :: proc(this: ^Grid) {
+	delete(this.occupied_sections)
+	free(this)
+}
+grid_get :: proc(this: ^Grid, x, y, z: int) -> bool {
+	return this.occupied_sections[z * this.width * this.height + y * this.width + z]
+}
+grid_set :: proc(this: ^Grid, x, y, z: int, v: bool) {
+	this.occupied_sections[z * this.width * this.height + y * this.width + z] = v
+}
+grid_point_unoccupied_radius :: proc(this: ^Grid, x, y, z: int) -> f64 {
+	min_distance := this.width * this.height * this.length
+	min_distance *= min_distance
+	for dz in 0 ..< this.height {
+		for dy in 0 ..< this.width {
+			for dx in 0 ..< this.length {
+				dist := (dx - x) * (dx - x) + (dy - y) * (dy - y) + (dz - z) * (dz - z)
+				if dist < min_distance {
+					if grid_get(this, x, y, z) {
+						min_distance = dist
+					}
+				}
+			}
+		}
+	}
+	return math.sqrt(cast(f64)min_distance)
+}
+
+create_graph_from_grid :: proc(this: ^Grid, start: Vec3) -> ^Graph {
+	grph := create_graph()
+	for dz in 0 ..< this.height {
+		for dy in 0 ..< this.width {
+			for dx in 0 ..< this.length {
+				pos := Vec3{cast(f64)dx, cast(f64)dy, cast(f64)dz} * this.cell_size + start
+				if !grid_get(this, dx, dy, dz) {
+					create_node(grph, pos)
+				}
+			}
+		}
+	}
+	for dz in 0 ..< this.height {
+		for dy in 0 ..< this.width {
+			for dx in 0 ..< this.length {
+				if !grid_get(this, dx, dy, dz) {
+					for dz1 in -1 ..= 1 {
+						for dy1 in -1 ..= 1 {
+							for dx1 in -1 ..= 1 {
+								if !grid_get(this, dx + dx1, dy + dy1, dz + dz1) {
+									point1 := Vec3{cast(f64)(dx), cast(f64)(dy), cast(f64)(dz)}
+									point2 := Vec3 {
+										cast(f64)(dx + dx1),
+										cast(f64)(dy + dy1),
+										cast(f64)(dz + dz1),
+									}
+									node1, _dist := get_nearest_node(grph, point1)
+									node2, _dist2 := get_nearest_node(grph, point2)
+									connect_nodes(grph, node1, node2)
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return grph
 }

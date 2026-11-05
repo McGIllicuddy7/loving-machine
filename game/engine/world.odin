@@ -141,6 +141,26 @@ register_entity_class :: proc(
 	RTTI.entity_classes[name] = class
 }
 
+init_register_entity_class :: proc "contextless" (
+	$type: typeid,
+	on_update: proc(this: ^Entity, delta_time: f32),
+	on_render: proc(this: ^Entity),
+	on_event: proc(this: ^Entity, event: Event),
+	destructor: proc(this: ^Entity),
+	on_level_transfer: proc(this: ^Entity),
+	create_at_location_proc: #type proc(transform: Transform, data: string) -> ^Entity = nil,
+) {
+	context = runtime.default_context()
+	register_entity_class(
+		type,
+		on_update,
+		on_render,
+		on_event,
+		destructor,
+		on_level_transfer,
+		create_at_location_proc,
+	)
+}
 register_daemon_class :: proc(
 	$type: typeid,
 	on_update: #type proc(this: ^Daemon, dt: f32),
@@ -170,6 +190,17 @@ register_daemon_class :: proc(
 	RTTI.daemon_classes[name] = class
 }
 
+init_register_daemon_class :: proc "contextless" (
+	$type: typeid,
+	on_update: #type proc(this: ^Daemon, dt: f32),
+	on_event: #type proc(this: ^Daemon, event: Event),
+	on_render: #type proc(this: ^Daemon),
+	on_destroy: #type proc(this: ^Daemon),
+	create_proc: #type proc(data: string) -> ^Daemon = nil,
+) {
+	context = runtime.default_context()
+	register_daemon_class(type, on_update, on_render, on_event, destructor, create_proc)
+}
 
 @(private)
 serialize_entity :: proc(entity: ^Entity, allocator: mem.Allocator) -> EntityBlob {

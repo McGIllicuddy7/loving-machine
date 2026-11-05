@@ -74,7 +74,14 @@ ship_destructor :: proc(this: ^Spaceship) {
 }
 
 ship_on_event :: proc(this: ^Spaceship, ev: engine.Event) {
-	engine.destroy_entity(this.self_ref)
+	switch v in ev.data {
+	case engine.CollisionEvent:
+		rvel := linalg.length2(v.relative_velocity) / 100
+		this.health -= cast(i32)math.floor(rvel)
+	}
+	if this.health < 0 {
+		engine.destroy_entity(this.self_ref)
+	}
 }
 
 ship_on_level_transfer :: proc(this: ^Spaceship) {}

@@ -775,7 +775,7 @@ graphics_step :: proc() {
 
 		light_dir := this.read_command_buffer.light_direction
 		light_cam: raylib.Camera3D
-		light_cam.position = {0, 0, 150}
+		light_cam.position = {0, 0, 150} + this.read_command_buffer.camera.position
 		light_cam.fovy = 45.
 		light_cam.projection = .ORTHOGRAPHIC
 		light_cam.target = {0, 0, 0}
