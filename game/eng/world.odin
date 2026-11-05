@@ -1,5 +1,5 @@
 
-package engine
+package eng
 import "base:builtin"
 import "base:runtime"
 import "core:encoding/cbor"

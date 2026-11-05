@@ -8,15 +8,15 @@ import "core:time"
 
 import "core:encoding/cbor"
 import "game"
-import "game/engine"
+import "game/eng"
 import "libgraph"
 import "libnav"
 import "vendor:raylib"
 
 //3,490,216
-Vec3f :: engine.Vec3f
-Vec3 :: engine.Vec3
-Quat :: engine.Quat
+Vec3f :: eng.Vec3f
+Vec3 :: eng.Vec3
+Quat :: eng.Quat
 main :: proc() {
 	track := mem.Tracking_Allocator{}
 	mem.tracking_allocator_init(&track, context.allocator)
@@ -28,12 +28,12 @@ main :: proc() {
 }
 
 game_main :: proc() {
-	engine.init()
-	defer engine.fini()
+	eng.init()
+	defer eng.fini()
 	game.game_setup()
 	t, _ := game.create_space_ship({10, 0, 0}, quaternion256(1), true)
 	for i in 0 ..< 1000 {
-		_, tmp := engine.create_entity(engine.Entity)
+		_, tmp := eng.create_entity(eng.Entity)
 		sz := 5
 		tmp.phys.position =
 			{
@@ -47,10 +47,10 @@ game_main :: proc() {
 		tmp.phys.width = 0.5
 		tmp.phys.length = 0.5
 		tmp.phys.is_static = true
-		tmp.mesh.name = engine.string_clone("cube")
-		tmp.mesh.diffuse_map_name = engine.string_clone("metal_diffuse.png")
-		tmp.mesh.normal_map_name = engine.string_clone("metal_normal.png")
+		tmp.mesh.name = eng.string_clone("cube")
+		tmp.mesh.diffuse_map_name = eng.string_clone("metal_diffuse.png")
+		tmp.mesh.normal_map_name = eng.string_clone("metal_normal.png")
 		tmp.mesh.color = raylib.WHITE
 	}
-	engine.engine_run()
+	eng.eng_run()
 }

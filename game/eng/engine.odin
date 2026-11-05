@@ -1,4 +1,4 @@
-package engine
+package eng
 import "base:intrinsics"
 import "base:runtime"
 import "core:container/queue"
