@@ -601,6 +601,7 @@ draw_graphics_objects :: proc(
 			raylib.SetShaderValue(this.shader, metal_loc, &i.mesh_metallic, .FLOAT)
 			col_em: [3]f32 = cast([3]f32)(i.emmisive_color.rgb) / 255.
 			raylib.SetShaderValue(this.shader, emmisive_col_loc, &col_em, .VEC3)
+			this.material.maps[0].color = i.tint
 		}
 		for j in 0 ..< msh.meshCount {
 			cur := msh.meshes[j]

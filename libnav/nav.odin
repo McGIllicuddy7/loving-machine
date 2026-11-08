@@ -84,9 +84,6 @@ calculate_missile_frame_acceleration :: proc(
 
 
 projectile_main :: proc() {
-	for i in t0 {
-		fmt.printf("at init:%s\n", i)
-	}
 	raylib.InitWindow(1000, 1000, "invaders")
 	raylib.SetTargetFPS(61)
 	outer: for !raylib.WindowShouldClose() {
@@ -271,11 +268,4 @@ projectile_main :: proc() {
 			raylib.EndDrawing()
 		}
 	}
-}
-
-t0: [dynamic]string
-@(init)
-_x :: proc "contextless" () {
-	context = runtime.default_context()
-	append(&t0, "hello world!")
 }

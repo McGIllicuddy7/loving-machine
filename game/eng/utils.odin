@@ -189,3 +189,24 @@ spawn_explosion :: proc(pos: Vec3, radius: f64, velocity := Vec3{}) {
 		},
 	)
 }
+
+rotate_to_look_in_direction :: proc(base: Quat, direction: Vec3, dt: f64, scale: f64) -> Quat {
+	max_dot := linalg.dot(linalg.quaternion256_mul_vector3(base, Vec3{1, 0, 0}), direction)
+	best := base
+	for dy in -6 ..= 6 {
+		for dp in -6 ..= 6 {
+			delta := linalg.quaternion_from_pitch_yaw_roll_f64(
+				cast(f64)dp * dt * scale / 6,
+				cast(f64)dy * dt * scale / 6,
+				0,
+			)
+			test := delta * base
+			tmp_dot := linalg.dot(linalg.quaternion256_mul_vector3(test, Vec3{1, 0, 0}), direction)
+			if tmp_dot > max_dot {
+				best = test
+				max_dot = tmp_dot
+			}
+		}
+	}
+	return best
+}

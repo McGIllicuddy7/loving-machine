@@ -29,9 +29,9 @@ void main()
     //    times the tint color (colDiffuse)
     //    times the fragment color (interpolated vertex color)
     vec4 base = texelColor*colDiffuse*fragColor;
-    base.r = dither(base.r, 8);
-    base.g = dither(base.g, 8);
-    base.b = dither(base.b,4);
+    base.r = dither(base.r, 16);
+    base.g = dither(base.g, 16);
+    base.b = dither(base.b,16);
     finalColor = base;
     //finalColor = base;
 }

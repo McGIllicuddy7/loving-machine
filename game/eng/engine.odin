@@ -12,6 +12,9 @@ import "vendor:darwin/Metal"
 
 import "vendor:raylib"
 
+ALLEGIANCE_NEUTRAL: u8 : 0
+ALLEGIANCE_PLAYER: u8 : 1
+ALLEGIANCE_AI: u8 : 2
 
 Log :: struct {
 	content:        cstring,
@@ -26,8 +29,32 @@ Logs :: struct {
 MAX_ENTITY_COUNT :: 16384
 POOLED_CHEAP_ENTITY_COUNT :: 16384
 
+EntityDestroyedEvent :: struct {
+	destroyed_entity:  EntityRef,
+	destroying_entity: EntityRef,
+}
+
+EntityPointDamageEvent :: struct {
+	damaging_entity: EntityRef,
+	damaged_entity:  EntityRef,
+	point:           Vec3,
+	direction:       Vec3,
+	damage:          i32,
+}
+
+EntityRadialDamageEvent :: struct {
+	damaging_entity: EntityRef,
+	damaged_entity:  EntityRef,
+	origin:          Vec3,
+	direction:       Vec3,
+	damage:          i32,
+}
+
 EventData :: union {
 	CollisionEvent,
+	EntityDestroyedEvent,
+	EntityPointDamageEvent,
+	EntityRadialDamageEvent,
 }
 
 Event :: struct {
@@ -38,6 +65,9 @@ Event :: struct {
 EntityTag :: enum {
 	Intangible,
 	ShouldTransferLevel,
+	Actor,
+	Projectile,
+	Missile,
 }
 
 Vec3f :: raylib.Vector3
@@ -102,6 +132,7 @@ Entity :: struct {
 	_type:             (typeid) `cbor:"-"`,
 	tags:              bit_set[EntityTag],
 	self_ref:          EntityRef,
+	allegieance:       u8,
 	phys:              PhysicsObject,
 	control_rotation:  Quat,
 	mesh:              EntityMesh,
@@ -130,6 +161,8 @@ EntityManager :: struct {
 	to_destroy_list:             queue.Queue(EntityRef),
 	entity_list:                 [dynamic]^Entity,
 	physics_object_list:         [dynamic]TaggedPhysicsObject,
+	cached_tag_lock:             sync.Mutex,
+	cached_tag_sets:             map[EntityTag][]^Entity,
 }
 
 
@@ -191,6 +224,7 @@ setup_world :: proc() {
 		manager.entity_list = make([dynamic]^Entity, engine_alloc())
 		manager.physics_object_list = make([dynamic]TaggedPhysicsObject, engine_alloc())
 		queue.init(&manager.to_destroy_list)
+		manager.cached_tag_sets = make(map[EntityTag][]^Entity, engine_alloc())
 	}
 	{
 		world := _get_world()
@@ -222,6 +256,7 @@ destroy_world :: proc() {
 		delete(manager.physics_object_list)
 		delete(manager.entity_list)
 		queue.destroy(&manager.to_destroy_list)
+		delete(manager.cached_tag_sets)
 	}
 	{
 		world := _get_world()
@@ -260,6 +295,7 @@ unload_world :: proc(world: ^World) {
 		clear(&manager.physics_object_list)
 		clear(&manager.entity_list)
 		queue.clear(&manager.to_destroy_list)
+		clear(&manager.cached_tag_sets)
 	}
 	{
 		world := _get_world()
@@ -369,6 +405,9 @@ string_free :: proc(s: string) {
 destroy_event :: proc(ev: Event) {
 	switch v in ev.data {
 	case CollisionEvent:
+	case EntityDestroyedEvent:
+	case EntityPointDamageEvent:
+	case EntityRadialDamageEvent:
 	case:
 	}
 }
@@ -415,6 +454,7 @@ create_entity :: proc(
 				tmp.self_ref = out_ref
 				tmp.mesh.offset.rotation = Quat(1)
 				manager.entities[i] = tmp
+				tmp.mesh.color = raylib.WHITE
 				break
 			}
 		}
@@ -435,11 +475,12 @@ create_entity :: proc(
 	}
 }
 
-destroy_entity :: proc(rf: EntityRef) {
+destroy_entity :: proc(rf: EntityRef, source: EntityRef = {}) {
 	manager := _get_entity_manager()
 	sync.mutex_lock(&manager.destroy_list_lock)
 	defer sync.mutex_unlock(&manager.destroy_list_lock)
 	queue.push_back(&manager.to_destroy_list, rf)
+	broadcast_event({source, EntityDestroyedEvent{rf, source}})
 }
 
 
@@ -527,6 +568,7 @@ game_tick :: proc() {
 		delta_time = raylib.GetFrameTime()
 	}
 	clear(&manager.entity_list)
+	clear(&manager.cached_tag_sets)
 	idx := 0
 	for &i in manager.entities {
 		if i != nil {
@@ -619,12 +661,14 @@ game_tick :: proc() {
 			ev: Event
 			{
 				world := _get_world()
-				sync.mutex_lock(&world.event_lock)
-				defer sync.mutex_unlock(&world.event_lock)
-				if queue.len(world.events) == 0 {
-					break
+				{
+					sync.mutex_lock(&world.event_lock)
+					defer sync.mutex_unlock(&world.event_lock)
+					if queue.len(world.events) == 0 {
+						break
+					}
+					ev = queue.pop_front(&world.events)
 				}
-				ev = queue.pop_front(&world.events)
 				tg := get_entity(ev.target)
 				if tg != nil {
 					for _name, i in engine.systems {
@@ -807,5 +851,43 @@ get_up_vector :: proc(this: ^Entity) -> Vec3 {
 engine_run :: proc() {
 	for !raylib.WindowShouldClose() {
 		game_tick()
+	}
+}
+
+entity_cast :: proc($T: typeid, ptr: ^Entity) -> ^T {
+	if ptr._type != T {
+		return nil
+	}
+	return cast(T^)ptr
+}
+
+apply_point_damage :: proc(
+	source: EntityRef,
+	target: EntityRef,
+	point: Vec3,
+	direction: Vec3,
+	amount: i32,
+) {
+	event := EntityPointDamageEvent{source, target, point, direction, amount}
+	broadcast_event({target, event})
+}
+
+get_all_entities_with_tag :: proc(tag: EntityTag) -> []^Entity {
+	manager := _get_entity_manager()
+	sync.mutex_lock(&manager.cached_tag_lock)
+	defer sync.mutex_unlock(&manager.cached_tag_lock)
+	if tag in manager.cached_tag_sets {
+		return manager.cached_tag_sets[tag]
+	} else {
+		entities := get_all_entities()
+		list := make([dynamic]^Entity, frame_alloc())
+		reserve(&list, len(entities))
+		for i in entities {
+			if tag in i.tags {
+				append(&list, i)
+			}
+		}
+		manager.cached_tag_sets[tag] = list[:]
+		return list[:]
 	}
 }
